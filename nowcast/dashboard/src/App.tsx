@@ -66,6 +66,7 @@ function Dashboard() {
   const [windAnimationVisible, setWindAnimationVisible] = useState(false);
   const [statesVisible, setStatesVisible] = useState(false);
   const [districtsVisible, setDistrictsVisible] = useState(false);
+  const [indiaVisible, setIndiaVisible] = useState(true);
   const [activeVar, setActiveVar] = useState<VarId>("none");
   const [baseMapId, setBaseMapId] = useState("none");
   const [activeOverlayIds, setActiveOverlayIds] = useState<Set<string>>(new Set());
@@ -319,6 +320,7 @@ function Dashboard() {
               windAnimationVisible={windAnimationVisible}
               statesVisible={statesVisible}
               districtsVisible={districtsVisible}
+              indiaVisible={indiaVisible}
               modelFrame={nowcastFrame.data ?? null}
               modelFrameVisible={modelFrameVisible}
               region={region}
@@ -369,6 +371,13 @@ function Dashboard() {
                   title="Animated flowing wind particles across India"
                 >
                   <div className={`status-dot ${windAnimationVisible ? "ok" : ""}`} /> Wind
+                </button>
+                <button
+                  className={`layer-btn ${indiaVisible ? "active" : ""}`}
+                  onClick={() => setIndiaVisible((v) => !v)}
+                  title="Highlight all of India with a light shade"
+                >
+                  <div className={`status-dot ${indiaVisible ? "ok" : ""}`} /> India
                 </button>
                 <button
                   className={`layer-btn ${statesVisible ? "active" : ""}`}
@@ -527,6 +536,7 @@ function MapLayers(props: {
   windAnimationVisible: boolean;
   statesVisible: boolean;
   districtsVisible: boolean;
+  indiaVisible: boolean;
   modelFrame: NowcastFrame | null;
   modelFrameVisible: boolean;
   region: { lat: number; lon: number } | null;
@@ -546,7 +556,7 @@ function MapLayers(props: {
       <WeatherRasterLayers layers={props.weatherLayers} activeVar={props.activeVar} />
       <WindArrows points={props.windPoints} visible={props.activeVar === "wind_speed"} />
       <WindParticles points={props.windParticlePoints} visible={props.windAnimationVisible} />
-      <AdminBoundaries statesVisible={props.statesVisible} districtsVisible={props.districtsVisible} />
+      <AdminBoundaries statesVisible={props.statesVisible} districtsVisible={props.districtsVisible} indiaVisible={props.indiaVisible} />
       <ModelFrameLayer frame={props.modelFrame} visible={props.modelFrameVisible} />
       <RegionBox region={props.region} />
       <AreaBox drawing={props.drawingArea} selected={props.area} fillColor={props.areaFillColor} fillOpacity={props.areaFillOpacity} />

@@ -1,21 +1,33 @@
-# India state/district boundaries
+# India state/district/country boundaries
 
 `india_states.geojson` (35 features) and `india_districts.geojson` (593
 features) back the clickable, glowing State/District map layers
-(`src/map/layers/AdminBoundaries.tsx`).
+(`src/map/layers/AdminBoundaries.tsx`). `india_outline.geojson` backs
+that same file's always-on, light-shade India-wide highlight — it's a
+separate, independently-sourced country-level boundary, not derived from
+the state file: that dataset's raw Rajasthan polygon has a real border
+error near 72°E/28°N (extends into Pakistan), confirmed against the
+unmodified upstream file. Doesn't affect the click-to-select feature
+here (the error is a small border-area sliver, not a visible distortion
+of the state's overall shape), but ruled that dataset out for the
+country outline specifically, where the exact international border
+matters and the whole point is a clean edge. `india_outline.geojson` is
+sourced from [datasets/geo-countries](https://github.com/datasets/geo-countries)
+(Natural Earth-derived), India's feature extracted and re-saved
+standalone. Cross-checked against 12 cities on both sides of India's
+borders before being adopted: Delhi, Mumbai, Kanyakumari, and Leh
+(Ladakh) correctly inside; Islamabad, Lahore, Multan, Quetta,
+Kathmandu, Dhaka, Colombo, and Yangon correctly outside. To regenerate:
+```python
+import json
+from shapely.geometry import shape, mapping
+d = json.load(open("countries.geojson", encoding="utf-8"))  # datasets/geo-countries
+india = shape(next(f for f in d["features"] if f["properties"]["name"] == "India")["geometry"]).buffer(0)
+json.dump({"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"name": "India"}, "geometry": mapping(india)}]},
+          open("india_outline.geojson", "w", encoding="utf-8"), separators=(",", ":"))
+```
 
-The satellite/radar "all India" rasters are clipped to India's actual
-coastline server-side (`nowcast/processing/india_shape.py` +
-`nowcast/configs/geo/india_outline.geojson`), using a separate dedicated
-country-level outline, not this file — see that module's docstring for
-why: this dataset's raw Rajasthan polygon has a real border error near
-72°E/28°N (extends into Pakistan), confirmed against the unmodified
-upstream file. Doesn't affect the click-to-select feature here (the
-error is a small border-area sliver, not a visible distortion of the
-state's overall shape), but ruled this dataset out for anything where
-the exact international border matters.
-
-**Source:** [geohacker/india](https://github.com/geohacker/india)
+**Source (states/districts):** [geohacker/india](https://github.com/geohacker/india)
 (GADM-derived, public domain-equivalent open data), simplified from the
 original ~23MB/~34MB files to ~1MB/~1.6MB via `mapshaper -simplify 6-8%
 -clean` for web performance.

@@ -5,20 +5,31 @@ import { X } from "lucide-react";
 import { useMeghMap } from "../MapProvider";
 import { whenStyleReady } from "../styleReady";
 
-/** Clickable, glowing state + district boundaries.
+/** Clickable, glowing state + district boundaries, plus an always-on
+ * whole-country highlight.
  *
- * Boundary shapes come from two static GeoJSON files in public/geo/
- * (simplified from a GADM-derived open dataset — see that folder's
- * provenance note). Clicking a state or district toggles its selection;
- * each selected region gets a distinct glow color from a fixed palette so
- * multiple selections stay visually distinguishable from each other, not
- * just from the unselected map.
+ * Boundary shapes come from static GeoJSON files in public/geo/
+ * (states/districts simplified from a GADM-derived open dataset — see
+ * that folder's provenance note; the India outline is a separate,
+ * independently-sourced file, also documented there). Clicking a state
+ * or district toggles its selection; each selected region gets a
+ * distinct glow color from a fixed palette so multiple selections stay
+ * visually distinguishable from each other, not just from the unselected
+ * map. India itself isn't click-to-select (there's only one) — it's a
+ * light-shade fill + outline toggled on/off like any other layer, on by
+ * default.
  *
  * "Glow" is faked with three stacked line layers per boundary type at
  * increasing width and decreasing opacity around the selected outline —
  * MapLibre GL has no native blur/glow paint property, this is the usual
  * trick for one. Selection state itself lives in MapLibre feature-state
  * (not layer filters), so toggling doesn't require re-adding data.
+ *
+ * All three are rendered as real vector layers, not a rasterized PNG —
+ * crisp at any zoom, unlike an earlier attempt at highlighting India by
+ * clipping the satellite/radar rasters' alpha channel to its outline,
+ * which had visible blur from PNG resampling. That approach was dropped
+ * in favor of this one; see git history for that attempt if curious.
  */
 
 const GLOW_PALETTE = [
@@ -41,6 +52,35 @@ const GEO_URL: Record<Level, string> = {
   states: "/geo/india_states.geojson",
   districts: "/geo/india_districts.geojson",
 };
+
+const INDIA_GEO_URL = "/geo/india_outline.geojson";
+const INDIA_TINT = "#3fb6ff"; // matches --accent
+
+/** The whole-country highlight — same crisp vector rendering as the
+ * states/districts fill/outline below (so it doesn't have the blur a
+ * rasterized-and-resampled PNG mask does at any zoom), just always on
+ * rather than click-to-select: one light-shade fill plus a clean outline
+ * over all of India. Uses a dedicated outline (india_outline.geojson,
+ * mirrored from nowcast/configs/geo/ — see that folder's README) rather
+ * than india_states.geojson, since that dataset's raw Rajasthan polygon
+ * has a real border error near Pakistan (see india_shape.py's old
+ * docstring history / that README for how this was found). */
+function addIndiaLayer(map: MaplibreMap, data: FeatureCollection) {
+  if (map.getSource("india-src")) return;
+  map.addSource("india-src", { type: "geojson", data });
+  map.addLayer({
+    id: "india-fill",
+    type: "fill",
+    source: "india-src",
+    paint: { "fill-color": INDIA_TINT, "fill-opacity": 0.08 },
+  });
+  map.addLayer({
+    id: "india-outline",
+    type: "line",
+    source: "india-src",
+    paint: { "line-color": INDIA_TINT, "line-width": 1.4, "line-opacity": 0.55 },
+  });
+}
 
 function addBoundaryLayers(map: MaplibreMap, level: Level, data: FeatureCollection) {
   const src = `${level}-src`;
@@ -105,9 +145,11 @@ function addBoundaryLayers(map: MaplibreMap, level: Level, data: FeatureCollecti
 export function AdminBoundaries({
   statesVisible,
   districtsVisible,
+  indiaVisible,
 }: {
   statesVisible: boolean;
   districtsVisible: boolean;
+  indiaVisible: boolean;
 }) {
   const { map, ready } = useMeghMap();
   const [selections, setSelections] = useState<Selection[]>([]);
@@ -117,7 +159,7 @@ export function AdminBoundaries({
   const visibleRef = useRef({ states: statesVisible, districts: districtsVisible });
   visibleRef.current = { states: statesVisible, districts: districtsVisible };
 
-  // Load + add both boundary sources/layers once, on map ready.
+  // Load + add all three boundary sources/layers once, on map ready.
   useEffect(() => {
     if (!map || !ready) return;
     let cancelled = false;
@@ -134,6 +176,17 @@ export function AdminBoundaries({
         })
         .catch((e) => console.error(`[AdminBoundaries] failed to load ${level}`, e));
     });
+
+    fetch(INDIA_GEO_URL)
+      .then((r) => r.json())
+      .then((data: FeatureCollection) => {
+        if (cancelled) return;
+        whenStyleReady(map, () => {
+          if (cancelled || map.getSource("india-src")) return;
+          addIndiaLayer(map, data);
+        });
+      })
+      .catch((e) => console.error("[AdminBoundaries] failed to load india outline", e));
 
     return () => {
       cancelled = true;
@@ -152,6 +205,13 @@ export function AdminBoundaries({
     setVis("states", statesVisible);
     setVis("districts", districtsVisible);
   }, [map, statesVisible, districtsVisible]);
+
+  useEffect(() => {
+    if (!map) return;
+    for (const id of ["india-fill", "india-outline"]) {
+      if (map.getLayer(id)) map.setLayoutProperty(id, "visibility", indiaVisible ? "visible" : "none");
+    }
+  }, [map, indiaVisible]);
 
   // Click-to-select — a single map-level handler (queries whichever hit
   // layers are currently visible, topmost feature wins) rather than one
