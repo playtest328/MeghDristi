@@ -217,10 +217,20 @@ button { font-family: inherit; }
 
 .layer-toggles {
   display: flex; background: var(--panel); border: 1px solid var(--panel-border);
-  border-radius: var(--radius-sm); overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  border-radius: var(--radius-sm); box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  /* More toggles than fit at narrow widths scroll horizontally instead of
+     being silently clipped by an `overflow: hidden` box (bit us when the
+     Wind/States/Districts toggles were added — they just vanished past the
+     edge with no visible way to reach them). Scrollbar hidden for a
+     cleaner look; the row is still fully reachable via trackpad/shift-wheel/
+     drag, this only hides the OS scrollbar chrome. */
+  max-width: 100%; min-width: 0; overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; -ms-overflow-style: none;
 }
+.layer-toggles::-webkit-scrollbar { display: none; }
 .layer-btn {
   display: flex; align-items: center; gap: 6px; padding: 8px 12px; font-size: 11px;
+  flex: none;
   color: var(--text-dim); border: none; background: transparent; cursor: pointer;
   border-right: 1px solid var(--panel-border); transition: 0.2s; font-weight: 500;
 }

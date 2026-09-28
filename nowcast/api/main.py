@@ -27,6 +27,7 @@ from nowcast.configs.settings import (
     REGIONS,
     ALERT_MIN_SEVERITY,
     ALERT_COOLDOWN_MINUTES,
+    WIDE_GRID_SIZE,
     get_active_region_key,
     get_region_name,
     set_active_region,
@@ -65,23 +66,24 @@ _lock = threading.Lock()
 # key -> {"records", "loaded_from", "forecast", "fusion_frame", "warmed_at"} —
 # a full ingest+forecast+fusion snapshot per demo region, kept warm in the
 # background (_region_prewarm_loop) so switching regions via /regions/{key}
-# can apply an already-computed snapshot instantly instead of a live
-# 10-20s re-ingest (Tomorrow.io per station + RainViewer + Blitzortung's
-# fixed listen window + pySTEPS). A snapshot older than
-# _SNAPSHOT_FRESH_SECONDS is treated as not-yet-warmed and falls back to a
-# live ingest, same as before this existed.
+# can apply an already-computed snapshot instantly instead of regenerating.
+# A snapshot older than _SNAPSHOT_FRESH_SECONDS is treated as not-yet-warmed
+# and falls back to a fresh ingest, same as before this existed.
 _region_snapshots = {}
 _SNAPSHOT_FRESH_SECONDS = INGEST_CYCLE_MINUTES * 60 * 2
 
-# Real hail+lightning across all of India (hazard_india.py) plus the raw
+# Synthetic hail+lightning across all of India (hazard_india.py) plus the raw
 # all-India radar image /raw-layers serves — independent of the per-region
-# demo system above, and sharing one RainViewer/Blitzortung fetch between
-# both rather than fetching twice. Cached and refreshed in the background
-# (_india_hazards_loop) rather than per-request: a fetch takes ~15s
-# (RainViewer mosaic + Blitzortung's listen window), too slow to redo on
-# every /hazards or /raw-layers call.
-_india_hazards_cache = {"hazards": [], "reflectivity": None, "computed_at": 0, "error": None}
-_INDIA_HAZARDS_TTL_SECONDS = 180
+# demo system above, and sharing one synthetic generation between both
+# rather than generating twice. Cached and refreshed in the background
+# (_india_hazards_loop) rather than per-request.
+_india_hazards_cache = {"hazards": [], "reflectivity": None, "spots": None, "computed_at": 0, "error": None}
+# Storm generation is now a cheap deterministic function of wall-clock time
+# (processing/storm_lifecycle.py) rather than a ~15s RainViewer/Blitzortung
+# fetch, so this can refresh much faster than before — matches the
+# frontend's own 30s poll cadence (useNowcastData.ts) so visible motion
+# looks continuous rather than jumping once every few minutes.
+_INDIA_HAZARDS_TTL_SECONDS = 30
 
 # district_key ("District, State") -> unix timestamp of the last SMS sent
 # for that district — see _maybe_send_alerts. Purely in-memory, resets on
@@ -296,11 +298,17 @@ def _region_prewarm_loop():
 
 def _refresh_india_hazards():
     try:
-        from nowcast.ingestion.rainviewer_radar import fetch_india_reflectivity
+        from nowcast.processing.storm_track import default_india_storm_spots
 
-        reflectivity = fetch_india_reflectivity(hazard_india.INDIA_GRID_SIZE)
-        hazards = hazard_india.detect(reflectivity=reflectivity)
-        
+        # One storm-spot draw shared by reflectivity, strikes, and (via the
+        # cache below) the satellite IR layer — so which storms are
+        # currently "on" across India, and where, agrees across every
+        # layer instead of each one independently randomizing.
+        spots = default_india_storm_spots()
+        reflectivity = hazard_india.synthetic_reflectivity(spots=spots)
+        strikes = hazard_india.synthetic_strikes(spots=spots)
+        hazards = hazard_india.detect(reflectivity=reflectivity, strikes=strikes)
+
         # Trigger Twilio alerts based on current hazards
         summary = _district_risk_summary(hazards)
         _maybe_send_alerts(summary)
@@ -308,6 +316,7 @@ def _refresh_india_hazards():
         with _lock:
             _india_hazards_cache["hazards"] = hazards
             _india_hazards_cache["reflectivity"] = reflectivity
+            _india_hazards_cache["spots"] = spots
             _india_hazards_cache["computed_at"] = time.time()
             _india_hazards_cache["error"] = None
     except Exception as exc:
@@ -342,8 +351,7 @@ def startup():
 def regions():
     """Selectable demo regions (section: see settings.py REGIONS docstring) —
     the storm-scale grid is a fixed-size box that can be repositioned to any
-    of these; real layers (RainViewer/Blitzortung/ECMWF) already cover
-    wherever it's pointed."""
+    of these."""
     return {
         "active": get_active_region_key(),
         "options": [{"key": k, "name": v["name"], "bbox": v["bbox"]} for k, v in REGIONS.items()],
@@ -378,18 +386,14 @@ def set_region(key: str):
 
 
 @app.get("/hazards")
-def hazards(lead_time: int = Query(0, ge=0, le=360, description="minutes; advects points by real ECMWF wind, see note")):
-    """Real hail + lightning hazard points across all of India (see
-    models/hazard_india.py), served from a background-refreshed cache
-    (~3min cadence — a live fetch takes ~15s, too slow per-request).
+def hazards(lead_time: int = Query(0, ge=0, le=360, description="minutes; advects points by synthetic wind, see note")):
+    """Synthetic hail + lightning hazard points across all of India (see
+    models/hazard_india.py), served from a background-refreshed cache.
 
-    `lead_time` does NOT re-run detection at a future time — there's no
-    real all-India forecast mechanism for hail/lightning (same reason
-    cloudburst/downburst were dropped entirely, see hazard_india.py).
-    Instead each point is advected by the real ECMWF wind vector at its
-    location: a standard simplified nowcasting technique (storms roughly
-    follow the steering flow), NOT a re-detected forecast — today's real
-    detections, moved along today's real wind. The old per-region, all-4-
+    `lead_time` does NOT re-run detection at a future time. Instead each
+    point is advected by the synthetic wind vector at its location: a
+    standard simplified nowcasting technique (storms roughly follow the
+    steering flow), NOT a re-detected forecast. The old per-region, all-4-
     hazard demo view (synthetic-backed downburst/cloudburst included) is
     still available at /hazards/region for whichever city is active."""
     with _lock:
@@ -412,9 +416,9 @@ def hazards(lead_time: int = Query(0, ge=0, le=360, description="minutes; advect
         }
         for h in india_hazards
     ]
-    note = "real hail (RainViewer) + lightning (Blitzortung) across all of India"
+    note = "synthetic hail + lightning demo data across all of India"
     if lead_time > 0:
-        note += f"; positions advected {lead_time}min by real ECMWF wind, not a re-detected forecast"
+        note += f"; positions advected {lead_time}min by synthetic wind, not a re-detected forecast"
     if error and not india_hazards:
         note = f"all-India hazard detection unavailable ({error}) — showing last known / empty"
     return {"type": "FeatureCollection", "features": features, "lead_time_minutes": lead_time, "note": note}
@@ -597,77 +601,67 @@ def nowcast_frame(
 def raw_layers():
     """Satellite IR + radar reflectivity as image overlays (section 5a).
 
-    Satellite is real (tir1 only) when `USE_LIVE_SATELLITE=true` — see
-    satellite_insat.py / copernicus_satellite.py — sourced from Copernicus
-    Sentinel-3 SLSTR, not MOSDAC/INSAT; still scoped to the active demo
-    region's small bbox (Sentinel-3/EUMETSAT don't give an easy all-India
-    single-request equivalent the way RainViewer does for radar). Radar is
-    real when `USE_LIVE_RADAR=true` — see radar_puller.py /
-    rainviewer_radar.py — sourced from RainViewer across all of India (the
-    same cached fetch /hazards' hail detection uses, see hazard_india.py),
-    not scoped to the active region at all: real weather doesn't confine
-    itself to whichever demo city happens to be selected.
+    Both are synthetic — satellite_insat.py / radar_puller.py — since no
+    live MOSDAC/INSAT access is configured. Both are all-India: the
+    per-region tir1 grid (~0.5deg bbox) is imperceptibly small on the
+    default all-India map view, so this uses satellite_insat.
+    synthetic_india_tir1 (same storm core, wider footprint) instead — same
+    reasoning as the radar layer already using hazard_india's all-India
+    reflectivity.
     """
     frame = _refresh_fusion()
     if frame is None:
         return {"layers": [], "note": "no fused frame yet — ingestion still warming up"}
 
     from nowcast.configs.settings import INDIA_BBOX
-    from nowcast.ingestion.radar_puller import USE_LIVE_RADAR
-    from nowcast.ingestion.satellite_insat import USE_LIVE_SATELLITE
+    from nowcast.ingestion.satellite_insat import synthetic_india_tir1
 
-    satellite_source = "copernicus-sentinel3" if USE_LIVE_SATELLITE else "synthetic"
     ch = frame["channels"]
+    with _lock:
+        spots = _india_hazards_cache["spots"]
+    india_tir1 = synthetic_india_tir1(hazard_india.INDIA_GRID_SIZE, spots=spots)
     layers = [
         {
             "id": "satellite_tir1",
-            "label": "Satellite IR (TIR-1, 10.8um)",
-            "bbox": frame["bbox"],
-            "image": _array_to_png_data_url(ch["tir1"], "gray_r", vmin=190, vmax=300),
-            "source": satellite_source,
+            "label": "Satellite IR (TIR-1, 10.8um) — all India",
+            "bbox": INDIA_BBOX,
+            "image": _array_to_png_data_url(india_tir1, "gray_r", vmin=190, vmax=300),
+            "source": "synthetic",
         },
     ]
 
     with _lock:
         india_reflectivity = _india_hazards_cache["reflectivity"]
-    if USE_LIVE_RADAR and india_reflectivity is not None:
-        radar_source = "rainviewer"
+    if india_reflectivity is not None:
         layers.append(
             {
                 "id": "radar_reflectivity",
                 "label": "Radar reflectivity (dBZ) — all India",
                 "bbox": INDIA_BBOX,
                 "image": _array_to_png_data_url(india_reflectivity, "turbo", vmin=0, vmax=65),
-                "source": radar_source,
+                "source": "synthetic",
             }
         )
     else:
-        radar_source = "synthetic"
         layers.append(
             {
                 "id": "radar_reflectivity",
                 "label": "Radar reflectivity (dBZ)",
                 "bbox": frame["bbox"],
                 "image": _array_to_png_data_url(ch["reflectivity_dbz"], "turbo", vmin=0, vmax=65),
-                "source": radar_source,
+                "source": "synthetic",
             }
         )
-    notes = []
-    notes.append("satellite real via Copernicus Sentinel-3 SLSTR" if USE_LIVE_SATELLITE else "satellite synthetic")
-    notes.append("radar real via RainViewer (IMD-sourced, not direct MOSDAC)" if USE_LIVE_RADAR else "radar synthetic")
-    return {"layers": layers, "note": "; ".join(notes)}
+    return {"layers": layers, "note": "satellite synthetic; radar synthetic"}
 
 
 @app.get("/weather-layers")
 def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF snaps to its nearest 3h step")):
     """Temperature/humidity/wind-speed as colored map overlays across the
     wide demo region (§WIDE_BBOX) — not just the narrow storm bbox used for
-    radar/satellite/hazards. Real ECMWF Open Data when USE_LIVE_ECMWF=true,
-    otherwise synthetic (see processing/weather_fields.py) — the response
-    always reports which one actually happened, since a live fetch failure
-    silently falls back to synthetic. `lead_time` lets the frontend animate
-    this alongside the hazard/nowcast lead-time slider instead of only ever
-    showing "now"."""
+    radar/satellite/hazards. Synthetic (see processing/weather_fields.py).
+    `lead_time` lets the frontend animate this alongside the hazard/nowcast
+    lead-time slider instead of only ever showing "now"."""
     g = weather_fields.generate_grid(lead_time)
     layers = [
         {
@@ -704,15 +698,9 @@ def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF s
         },
     ]
 
-    # Rainfall: real, all-India, derived from the same cached RainViewer
+    # Rainfall: synthetic, all-India, derived from the same cached synthetic
     # reflectivity /hazards' hail detection uses (see hazard_india.py) via
-    # the standard Marshall-Palmer Z-R relation (Z=200R^1.6) — a genuine
-    # current rain-rate estimate, not a pySTEPS forecast, since there's no
-    # real all-India forecast mechanism (no persisted real radar time
-    # series for pySTEPS to extrapolate from). This replaced an earlier
-    # version of this layer that silently used the per-region pySTEPS
-    # frame, which meant "Rainfall" was the one weather variable still
-    # secretly scoped to whichever demo city was active.
+    # the standard Marshall-Palmer Z-R relation (Z=200R^1.6).
     import numpy as np
     from nowcast.configs.settings import INDIA_BBOX
 
@@ -725,7 +713,7 @@ def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF s
         layers.append(
             {
                 "id": "rainfall",
-                "label": "Rain rate (from real radar)",
+                "label": "Rain rate (from synthetic radar)",
                 "unit": "mm/hr",
                 "bbox": INDIA_BBOX,
                 "vmin": 0, "vmax": 65,
@@ -765,29 +753,29 @@ def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF s
         )
 
     source = g.get("source", "synthetic")
-    note = (
-        "real ECMWF Open Data (HRES, CC-BY-4.0) — see nowcast/ingestion/ecmwf_weather.py"
-        if source == "ecmwf-opendata"
-        else "synthetic ambient fields — not an IMD/MOSDAC/ECMWF product"
-    )
+    note = "synthetic ambient fields — not an IMD/MOSDAC/ECMWF product"
     return {"layers": layers, "note": note, "source": source}
 
 
 @app.get("/wind-vectors")
-def wind_vectors(lead_time: int = Query(0, description="minutes ahead, same semantics as /weather-layers")):
-    """Sparse wind arrow points (speed + direction) for symbol rendering."""
-    return {"points": weather_fields.wind_vector_points(t_min=lead_time)}
+def wind_vectors(
+    lead_time: int = Query(0, description="minutes ahead, same semantics as /weather-layers"),
+    stride: int = Query(4, ge=1, le=WIDE_GRID_SIZE, description="grid thinning factor; lower = denser (e.g. 2 for the animated wind-particle layer vs the default sparse arrow icons)"),
+):
+    """Wind points (speed + direction) on a regular lat/lon grid — sparse
+    (default stride=4) for symbol/arrow rendering, denser on request for
+    the animated wind-particle layer, which needs a finer field to
+    interpolate a smooth flow from."""
+    return {"points": weather_fields.wind_vector_points(stride=stride, t_min=lead_time)}
 
 
 @app.get("/region-forecast")
 def region_forecast(lat: float, lon: float, lead_time: int = Query(0, ge=0, le=360)):
     """Point-sampled future trend for a user-selected region (temperature/
     humidity/wind at a chosen lead time) — backs the dashboard's per-region
-    time-scale panel. Real ECMWF Open Data when USE_LIVE_ECMWF=true (the
-    lead-time rounds to ECMWF's nearest 3h forecast step), otherwise
-    synthetic (see weather_fields.py). If the point falls inside the storm
-    bbox, also includes the pySTEPS cloudburst rain-rate forecast (always
-    synthetic input) at the nearest lead step for that location."""
+    time-scale panel. Synthetic (see weather_fields.py). If the point falls
+    inside the storm bbox, also includes the pySTEPS cloudburst rain-rate
+    forecast at the nearest lead step for that location."""
     sample = weather_fields.sample_point(lat, lon, lead_time)
 
     cloudburst_rainrate = None

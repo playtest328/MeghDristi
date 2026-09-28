@@ -1,13 +1,9 @@
 """Ambient weather fields — temperature, humidity, wind.
 
-When `USE_LIVE_ECMWF=true` (see settings.py), this is REAL data: ECMWF
-Open Data HRES forecast (free, no API key), via
-`nowcast/ingestion/ecmwf_weather.py`. Otherwise — and as an automatic
-fallback if the live fetch fails for any reason (network, decode error,
-package missing) — it's synthetic: smooth latitude-driven climatology plus
-a storm-proximity perturbation (cooler, more humid, windier near the fake
-storm core, like a real gust front/cold pool) so it still reads as
-physically coherent with the rest of the demo even when faked. Not part of
+Synthetic: smooth latitude-driven climatology plus a storm-proximity
+perturbation (cooler, more humid, windier near the fake storm core, like a
+real gust front/cold pool) so it still reads as physically coherent with
+the rest of the demo. Not part of
 project.md's original data sources (IMD/MOSDAC nowcast feeds don't give
 gridded temperature/humidity/wind directly at this resolution) — added on
 top as a "situational awareness" layer so the map shows colored data
@@ -22,11 +18,9 @@ Two access patterns:
   (in live mode, this samples the same cached grid `generate_grid` would
   have built, not a separate real-time query per point).
 """
-import sys
-
 import numpy as np
 
-from nowcast.configs.settings import get_wide_bbox, WIDE_GRID_SIZE, USE_LIVE_ECMWF
+from nowcast.configs.settings import get_wide_bbox, WIDE_GRID_SIZE
 from nowcast.processing.storm_track import center_at
 
 # Baseline climatology for the demo region/season (rough Maharashtra
@@ -111,40 +105,10 @@ def _generate_grid_mock(t_min=0):
 
 
 def generate_grid(t_min=0):
-    if USE_LIVE_ECMWF:
-        try:
-            from nowcast.ingestion import ecmwf_weather
-
-            return ecmwf_weather.fetch_grid(t_min)
-        except Exception as exc:
-            print(f"[weather_fields] ECMWF live fetch failed ({exc}), falling back to synthetic", file=sys.stderr)
     return _generate_grid_mock(t_min)
 
 
-def _sample_from_grid(grid, lat, lon):
-    lon_min, lat_min, lon_max, lat_max = grid["bbox"]
-    n = grid["grid_size"]
-    xi = int(round((lon - lon_min) / (lon_max - lon_min) * (n - 1)))
-    yi = int(round((lat - lat_min) / (lat_max - lat_min) * (n - 1)))
-    xi, yi = max(0, min(n - 1, xi)), max(0, min(n - 1, yi))
-    return {
-        "temperature_c": round(float(grid["temperature_c"][yi, xi]), 1),
-        "humidity_pct": round(float(np.clip(grid["humidity_pct"][yi, xi], 0, 100)), 1),
-        "wind_speed_ms": round(float(max(grid["wind_speed_ms"][yi, xi], 0)), 1),
-        "wind_dir_deg": round(float(grid["wind_dir_deg"][yi, xi] % 360), 1),
-        "pressure_hpa": round(float(grid["pressure_hpa"][yi, xi]), 1),
-    }
-
-
 def sample_point(lat, lon, t_min=0):
-    if USE_LIVE_ECMWF:
-        try:
-            from nowcast.ingestion import ecmwf_weather
-
-            return _sample_from_grid(ecmwf_weather.fetch_grid(t_min), lat, lon)
-        except Exception as exc:
-            print(f"[weather_fields] ECMWF live fetch failed ({exc}), falling back to synthetic", file=sys.stderr)
-
     temperature_c, humidity_pct, wind_speed_ms, wind_dir_deg, pressure_hpa = _fields_at(lat, lon, t_min)
     return {
         "temperature_c": round(float(temperature_c), 1),

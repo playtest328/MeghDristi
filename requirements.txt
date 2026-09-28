@@ -11,10 +11,3 @@ Pillow
 torch
 dgmr
 huggingface_hub
-ecmwf-opendata
-cfgrib
-eccodes
-xarray
-paho-mqtt
-tifffile
-eumdac

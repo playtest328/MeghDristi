@@ -98,6 +98,32 @@ export function useWindVectors(leadMinutes: number, enabled: boolean): FetchStat
   return state;
 }
 
+/** Denser wind grid (stride=2, ~4x the points of the arrow-icon field)
+ * for WindParticles.tsx to interpolate a smooth flow from — polled on the
+ * same cadence as the other layers so the underlying field slowly
+ * updates, though the actual particle motion between polls is entirely
+ * local (requestAnimationFrame) and never restarts on a poll. */
+export function useWindParticleField(leadMinutes: number, enabled: boolean): FetchState<WindVectorsResponse> {
+  const [state, setState] = useState<FetchState<WindVectorsResponse>>({ data: null, loading: false, error: null });
+  useEffect(() => {
+    if (!enabled) return;
+    let cancelled = false;
+    const fetchNow = () => {
+      api
+        .windVectors(leadMinutes, 2)
+        .then((data) => !cancelled && setState({ data, loading: false, error: null }))
+        .catch((e) => !cancelled && setState((s) => ({ ...s, loading: false, error: describeError(e) })));
+    };
+    fetchNow();
+    const id = setInterval(fetchNow, POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [leadMinutes, enabled]);
+  return state;
+}
+
 export function useForecastSummary(model: ModelId): FetchState<ForecastSummary> {
   const [state, setState] = useState<FetchState<ForecastSummary>>({ data: null, loading: true, error: null });
   useEffect(() => {

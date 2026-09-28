@@ -14,7 +14,7 @@ radar, satellite, and lightning mock generators.
 import numpy as np
 
 from nowcast.configs.settings import get_region_bbox
-from nowcast.processing.storm_track import center_at, DEFAULT_CELL
+from nowcast.processing.storm_track import center_at, cluster_intensity_fraction, DEFAULT_CELL
 
 GRID_SIZE = 64  # cells per side, ~ few hundred m to 1km depending on bbox extent
 
@@ -48,15 +48,23 @@ def generate_sequence(n_frames=6, dt_minutes=10, peak_dbz=58, radius_km=8, t_off
     _, bbox_lat_min, _, bbox_lat_max = get_region_bbox()
     km_per_deg_lon = 111.0 * np.cos(np.radians((bbox_lat_min + bbox_lat_max) / 2))
 
+    bearing_deg = track_kwargs.get("bearing_deg")
+    # One cluster shape (cell count/sizes/offsets) for the whole sequence,
+    # just translated per-frame with the storm center — a shape that
+    # re-randomized every frame would inject noise into pySTEPS' motion
+    # estimate between consecutive frames.
+    cluster_seed = np.random.default_rng().integers(0, 2**31 - 1)
+
     frames = []
     for i in range(n_frames):
         t_min = t_offset_min + i * dt_minutes
         c_lat, c_lon = center_at(t_min, **track_kwargs)
 
-        dy_km = (lat_grid - c_lat) * km_per_deg_lat
-        dx_km = (lon_grid - c_lon) * km_per_deg_lon
-        r_km = np.sqrt(dx_km**2 + dy_km**2)
-        frame = peak_dbz * np.exp(-(r_km**2) / (2 * radius_km**2))
+        cluster = cluster_intensity_fraction(
+            lon_grid, lat_grid, c_lat, c_lon,
+            bearing_deg=bearing_deg, radius_km=radius_km, seed=cluster_seed,
+        )
+        frame = peak_dbz * cluster
         frame += np.random.normal(0, 0.5, frame.shape)  # sensor noise
         frames.append(np.clip(frame, 0, None).astype(np.float32))
 

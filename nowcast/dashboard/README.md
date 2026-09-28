@@ -33,11 +33,6 @@ Opens at `http://localhost:5173`. Requires the backend running at
   notes before adding or changing any entry — every layer name here was
   confirmed against the live server, not guessed.
 
-## Superseded
-
-`legacy/index.html` is the original single-file HTML/JS version, kept for
-reference. The React app is the maintained dashboard going forward.
-
 ## Build
 
 ```bash

@@ -1,44 +1,32 @@
-"""Real hail + lightning hazard detection across all of India.
+"""Synthetic hail + lightning hazard demo across all of India.
 
 Unlike the per-region demo (models/hazard.py + processing/synthetic_radar.py,
-still used by the Forecast/Replay pages), this has no synthetic storm and no
-fixed demo city — it looks at real RainViewer reflectivity and real
-Blitzortung lightning strikes across the whole country and flags wherever
-they actually indicate hail-favorable conditions or a strike, right now.
+still used by the Forecast/Replay pages), this has no fixed demo city — it
+generates a synthetic reflectivity field and lightning strikes across the
+whole country (centered on the same moving storm cell used everywhere else
+in the demo, via storm_track) and flags wherever they indicate
+hail-favorable conditions or a strike.
 
-Downburst (needs Doppler radial velocity — no public source publishes raw
-volumetric scans) and cloudburst (needs a persisted real radar time-series
-for pySTEPS to extrapolate from, which a single "now" RainViewer frame per
-cycle doesn't provide) have no real all-India equivalent. Rather than fake
-either at country scale, both are simply absent from this module's output —
-they remain available, synthetic-backed, in the per-region demo.
+Downburst (needs Doppler radial velocity) and cloudburst (needs a persisted
+radar time-series for pySTEPS to extrapolate from) have no all-India
+equivalent here — both remain available, synthetic-backed, in the
+per-region demo instead.
 
 Hail rule here is simplified from hazard.py's grid rule: reflectivity +
-collocated real lightning only, no cold-cloud-top requirement. Real
-satellite coverage (Copernicus Sentinel-3's polar orbit, EUMETSAT pending
-license) isn't available everywhere in India at once, so requiring it would
-make hail flicker on/off based on incidental satellite coverage rather than
-actual storm severity — reflectivity + lightning is still a real,
-non-synthetic signal on its own.
+collocated lightning only, no cold-cloud-top requirement.
 
 Severity is 3-tier (low/moderate/high, colored green/yellow/red on the map)
-based on reflectivity for hail, bumped up a tier if a real strike is
-collocated; lightning strikes are always "high" (an actual strike is
-inherently a live hazard, not a graded risk).
+based on reflectivity for hail, bumped up a tier if a strike is collocated;
+lightning strikes are always "high".
 
 `lead_minutes` (used by /hazards' lead-time slider) does NOT re-run
-detection at a future time — there's no real all-India forecast mechanism
-for hail/lightning (same reason cloudburst/downburst were dropped
-entirely). Instead each point's position is advected by the real ECMWF
-wind vector at that location, a standard simplified nowcasting technique
-(storms roughly follow the steering flow) — NOT a re-detected forecast,
-just today's real detections moved along today's real wind. Documented
-explicitly rather than left implicit, since it's a real/synthetic
-distinction worth being honest about.
+detection at a future time. Instead each point's position is advected by
+the synthetic wind vector at that location (processing/weather_fields.py),
+a standard simplified nowcasting technique (storms roughly follow the
+steering flow) — NOT a re-detected forecast, just the current detections
+moved along the current wind field.
 
-Output is real hail + lightning only — no synthetic filler points. The
-map may legitimately show few or zero points when India has little active
-convection; that's the true state, not something to paper over.
+All output here is synthetic demo data — no live network calls.
 """
 import os
 import sys
@@ -48,11 +36,20 @@ import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 from nowcast.configs.settings import INDIA_BBOX, HAIL_REFLECTIVITY_MIN_DBZ
 from nowcast.configs.districts_india import nearest_districts_vectorized
+from nowcast.processing.storm_track import default_india_storm_spots, multi_cluster_intensity_fraction
 
 INDIA_GRID_SIZE = 150  # ~0.2deg/cell, ~22km — fine enough for a country overview
 LIGHTNING_PROXIMITY_KM = 25.0  # collocated-with-lightning bumps hail severity up a tier
 HAIL_MODERATE_DBZ = 65.0  # >= this (and below HIGH) -> "moderate"
 HAIL_HIGH_DBZ = 78.0  # >= this -> "high"
+
+# Synthetic all-India storm field — multiple scattered cells (see
+# storm_track.default_india_storm_spots), each rendered wider than the
+# per-region demo storm since a country-scale cell should read as bigger
+# on this much coarser grid.
+_SYNTHETIC_PEAK_DBZ = 72.0
+_SYNTHETIC_STRIKE_COUNT = 3  # per active spot, not total
+_SYNTHETIC_STRIKE_SPREAD_DEG = 0.15
 
 _SEVERITY_ORDER = ["low", "moderate", "high"]
 
@@ -67,7 +64,7 @@ def _km_per_deg(lat):
 
 
 def advect_point(lat, lon, lead_minutes):
-    """Shift (lat, lon) by the real ECMWF wind vector at that point over
+    """Shift (lat, lon) by the synthetic wind vector at that point over
     `lead_minutes` — see module docstring for what this is and isn't."""
     if lead_minutes <= 0:
         return lat, lon
@@ -100,35 +97,71 @@ def advect_hazards(hazards, lead_minutes):
     return out
 
 
-def detect(reflectivity=None, strikes=None):
-    """Real hail + lightning hazard points across all of India.
+def synthetic_reflectivity(spots=None):
+    """Synthetic all-India reflectivity grid — several clustered storm
+    cells scattered across the country (see storm_track.
+    default_india_storm_spots), each independently appearing/disappearing
+    over time, rendered onto INDIA_BBOX at INDIA_GRID_SIZE resolution.
 
-    `reflectivity`/`strikes` can be pre-fetched and passed in (main.py does
-    this, sharing one RainViewer/Blitzortung fetch between hazard detection
-    and the /raw-layers all-India radar image instead of fetching twice) —
-    left as None, this fetches them itself, so the module stays runnable
-    standalone via `python -m nowcast.models.hazard_india`.
+    `spots` lets callers (main.py, synthetic_strikes below) share one
+    storm-spot draw between reflectivity/strikes/satellite so they all
+    show the same storms in the same places — left as None, generates its
+    own so the module stays runnable standalone."""
+    if spots is None:
+        spots = default_india_storm_spots()
 
-    Returns a list of {lat, lon, type, severity, ...} dicts. Raises if the
-    radar fetch itself fails (no data at all to work with) — callers should
-    treat that like any other live-source failure. A failed *lightning*
-    fetch is non-fatal: hail detection still runs on reflectivity alone,
-    just without the lightning-proximity severity bump, and simply
-    contributes no lightning hazard points itself.
+    lon_min, lat_min, lon_max, lat_max = INDIA_BBOX
+    lons = np.linspace(lon_min, lon_max, INDIA_GRID_SIZE)
+    lats = np.linspace(lat_min, lat_max, INDIA_GRID_SIZE)
+    lon_grid, lat_grid = np.meshgrid(lons, lats)
+
+    cluster = multi_cluster_intensity_fraction(lon_grid, lat_grid, spots)
+
+    frame = _SYNTHETIC_PEAK_DBZ * cluster
+    frame += np.random.normal(0, 0.5, frame.shape)
+    return np.clip(frame, 0, None).astype(np.float32)
+
+
+def synthetic_strikes(spots=None):
+    """A handful of synthetic lightning strikes scattered near each active
+    storm spot (see synthetic_reflectivity)."""
+    if spots is None:
+        spots = default_india_storm_spots()
+
+    strikes = []
+    for spot in spots:
+        for _ in range(_SYNTHETIC_STRIKE_COUNT):
+            strikes.append(
+                {
+                    "lat": float(spot["lat"] + np.random.normal(0, _SYNTHETIC_STRIKE_SPREAD_DEG)),
+                    "lon": float(spot["lon"] + np.random.normal(0, _SYNTHETIC_STRIKE_SPREAD_DEG)),
+                }
+            )
+    return strikes
+
+
+def detect(reflectivity=None, strikes=None, spots=None):
+    """Synthetic hail + lightning hazard points across all of India.
+
+    `reflectivity`/`strikes` can be pre-generated and passed in (main.py
+    does this, sharing one synthetic fetch between hazard detection and the
+    /raw-layers all-India radar image instead of generating twice) —
+    `spots` (see storm_track.default_india_storm_spots) is used to generate
+    whichever of the two isn't already provided, so they still agree on
+    where the active storms are. All left as None, this generates
+    everything itself, so the module stays runnable standalone via
+    `python -m nowcast.models.hazard_india`.
+
+    Returns a list of {lat, lon, type, severity, ...} dicts.
     """
-    if reflectivity is None:
-        from nowcast.ingestion.rainviewer_radar import fetch_india_reflectivity
+    if spots is None and (reflectivity is None or strikes is None):
+        spots = default_india_storm_spots()
 
-        reflectivity = fetch_india_reflectivity(INDIA_GRID_SIZE)
+    if reflectivity is None:
+        reflectivity = synthetic_reflectivity(spots=spots)
 
     if strikes is None:
-        try:
-            from nowcast.ingestion.blitzortung_lightning import fetch_india_strikes
-
-            strikes = fetch_india_strikes()
-        except Exception as exc:
-            print(f"[hazard_india] lightning fetch failed ({exc}), hail runs on reflectivity alone")
-            strikes = []
+        strikes = synthetic_strikes(spots=spots)
 
     lon_min, lat_min, lon_max, lat_max = INDIA_BBOX
     lons = np.linspace(lon_min, lon_max, INDIA_GRID_SIZE)
@@ -173,7 +206,7 @@ def detect(reflectivity=None, strikes=None):
         )
 
     for h in hazards:
-        h["source"] = "real"
+        h["source"] = "synthetic"
 
     # District/state labels (judges think in districts, not grid cells —
     # see districts_india.py for what "nearest centroid" actually means

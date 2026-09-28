@@ -5,6 +5,8 @@ import { HazardLayers } from "./map/layers/HazardLayers";
 import { SensorRasterLayers } from "./map/layers/SensorRasterLayers";
 import { WeatherRasterLayers } from "./map/layers/WeatherRasterLayers";
 import { WindArrows } from "./map/layers/WindArrows";
+import { WindParticles } from "./map/layers/WindParticles";
+import { AdminBoundaries } from "./map/layers/AdminBoundaries";
 import { ModelFrameLayer } from "./map/layers/ModelFrameLayer";
 import { RegionBox } from "./map/layers/RegionBox";
 import { AreaBox } from "./map/layers/AreaBox";
@@ -37,6 +39,7 @@ import {
   useNowcastFrame,
   useWeatherLayers,
   useWindVectors,
+  useWindParticleField,
 } from "./hooks/useNowcastData";
 import type { ModelId, RegionForecast, HazardsResponse, RawLayer, WeatherLayer, WindPoint, NowcastFrame, AreaForecast, Bbox } from "./types";
 
@@ -60,6 +63,9 @@ function Dashboard() {
   const [heatmapsVisible, setHeatmapsVisible] = useState(true);
   const [lightningVisible, setLightningVisible] = useState(true);
   const [modelFrameVisible, setModelFrameVisible] = useState(false);
+  const [windAnimationVisible, setWindAnimationVisible] = useState(false);
+  const [statesVisible, setStatesVisible] = useState(false);
+  const [districtsVisible, setDistrictsVisible] = useState(false);
   const [activeVar, setActiveVar] = useState<VarId>("none");
   const [baseMapId, setBaseMapId] = useState("none");
   const [activeOverlayIds, setActiveOverlayIds] = useState<Set<string>>(new Set());
@@ -91,6 +97,7 @@ function Dashboard() {
   // whichever demo city was active.
   const weatherLayers = useWeatherLayers(leadMinutes, activeVar !== "none");
   const windVectors = useWindVectors(leadMinutes, activeVar === "wind_speed");
+  const windParticleField = useWindParticleField(leadMinutes, windAnimationVisible);
   const displayedWeatherLayers = weatherLayers.data?.layers ?? [];
 
   useEffect(() => {
@@ -181,11 +188,7 @@ function Dashboard() {
       { padding: 80, duration: 800 }
     );
     try {
-      // The first request in a while can genuinely take several seconds
-      // when USE_LIVE_ECMWF is on: weather_fields.generate_grid() cold-
-      // fetches three separate GRIB files from ECMWF before its in-process
-      // cache is warm. areaLoading is what keeps the panel from looking
-      // frozen during that wait.
+      // areaLoading keeps the panel from looking frozen while this resolves.
       const reading = await api.areaForecast(bbox, 0);
       setAreaReading(reading);
     } catch (e) {
@@ -285,6 +288,10 @@ function Dashboard() {
               weatherLayers={displayedWeatherLayers}
               activeVar={activeVar}
               windPoints={windVectors.data?.points ?? null}
+              windParticlePoints={windParticleField.data?.points ?? null}
+              windAnimationVisible={windAnimationVisible}
+              statesVisible={statesVisible}
+              districtsVisible={districtsVisible}
               modelFrame={nowcastFrame.data ?? null}
               modelFrameVisible={modelFrameVisible}
               region={region}
@@ -328,6 +335,27 @@ function Dashboard() {
                 </button>
                 <button className={`layer-btn ${heatmapsVisible ? "active" : ""}`} onClick={() => setHeatmapsVisible((v) => !v)}>
                   <div className={`status-dot ${heatmapsVisible ? "ok" : ""}`} /> Hazards
+                </button>
+                <button
+                  className={`layer-btn ${windAnimationVisible ? "active" : ""}`}
+                  onClick={() => setWindAnimationVisible((v) => !v)}
+                  title="Animated flowing wind particles across India"
+                >
+                  <div className={`status-dot ${windAnimationVisible ? "ok" : ""}`} /> Wind
+                </button>
+                <button
+                  className={`layer-btn ${statesVisible ? "active" : ""}`}
+                  onClick={() => setStatesVisible((v) => !v)}
+                  title="Click a state to select it and highlight it with a glow"
+                >
+                  <div className={`status-dot ${statesVisible ? "ok" : ""}`} /> States
+                </button>
+                <button
+                  className={`layer-btn ${districtsVisible ? "active" : ""}`}
+                  onClick={() => setDistrictsVisible((v) => !v)}
+                  title="Click a district to select it and highlight it with a glow"
+                >
+                  <div className={`status-dot ${districtsVisible ? "ok" : ""}`} /> Districts
                 </button>
                 <button
                   className={`layer-btn ${baseMapId === "dem" ? "active" : ""}`}
@@ -463,6 +491,10 @@ function MapLayers(props: {
   weatherLayers: WeatherLayer[] | null;
   activeVar: VarId;
   windPoints: WindPoint[] | null;
+  windParticlePoints: WindPoint[] | null;
+  windAnimationVisible: boolean;
+  statesVisible: boolean;
+  districtsVisible: boolean;
   modelFrame: NowcastFrame | null;
   modelFrameVisible: boolean;
   region: { lat: number; lon: number } | null;
@@ -481,6 +513,8 @@ function MapLayers(props: {
       <SensorRasterLayers layers={props.rawLayers} satelliteVisible={props.satelliteVisible} radarVisible={props.radarVisible} />
       <WeatherRasterLayers layers={props.weatherLayers} activeVar={props.activeVar} />
       <WindArrows points={props.windPoints} visible={props.activeVar === "wind_speed"} />
+      <WindParticles points={props.windParticlePoints} visible={props.windAnimationVisible} />
+      <AdminBoundaries statesVisible={props.statesVisible} districtsVisible={props.districtsVisible} />
       <ModelFrameLayer frame={props.modelFrame} visible={props.modelFrameVisible} />
       <RegionBox region={props.region} />
       <AreaBox drawing={props.drawingArea} selected={props.area} fillColor={props.areaFillColor} fillOpacity={props.areaFillOpacity} />

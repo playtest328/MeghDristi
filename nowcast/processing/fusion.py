@@ -16,7 +16,6 @@ not this function.
 """
 import glob
 import os
-from collections import deque
 from datetime import datetime
 
 import numpy as np
@@ -24,9 +23,7 @@ import numpy as np
 from nowcast.configs.settings import DATA_DIR, get_region_bbox
 from nowcast.processing.synthetic_radar import GRID_SIZE
 
-FUSION_DIR = os.path.join(DATA_DIR, "fusion")
 CHANNELS = ["tir1", "wv", "mwir", "reflectivity_dbz", "lightning_prob"]
-BUFFER_MAX_FRAMES = 12  # ~2h at a 10min cadence
 
 
 def _grid_coords():
@@ -217,33 +214,10 @@ def build_fused_frame_for_timestamp(timestamp_str):
     }
 
 
-_rolling_buffer = deque(maxlen=BUFFER_MAX_FRAMES)
-
-
-def push_and_get_buffer(frame=None):
-    """Append the latest fused frame to the in-process rolling buffer (~1-2h,
-    section 3 item 5) and return the buffer as a list, oldest first."""
-    frame = frame or build_fused_frame()
-    if frame is not None:
-        _rolling_buffer.append(frame)
-    return list(_rolling_buffer)
-
-
-def save_frame(frame, timestamp_str):
-    os.makedirs(FUSION_DIR, exist_ok=True)
-    out_path = os.path.join(FUSION_DIR, f"{timestamp_str}.npz")
-    np.savez(out_path, bbox=np.array(frame["bbox"]), **frame["channels"])
-    return out_path
-
-
 if __name__ == "__main__":
-    from datetime import datetime, timezone
-
     fr = build_fused_frame()
     if fr is None:
         print("[fusion] missing a source snapshot — run the ingestion pullers first")
     else:
         for name, arr in fr["channels"].items():
             print(f"{name}: shape={arr.shape} min={arr.min():.1f} max={arr.max():.1f}")
-        ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        print("saved:", save_frame(fr, ts))

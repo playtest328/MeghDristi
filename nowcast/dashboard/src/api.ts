@@ -46,7 +46,7 @@ export const api = {
   stormEta: () => getJSON<StormEtaResponse>("/storm-eta"),
   rawLayers: () => getJSON<RawLayersResponse>("/raw-layers"),
   weatherLayers: (leadMinutes: number) => getJSON<WeatherLayersResponse>(`/weather-layers?lead_time=${leadMinutes}`),
-  windVectors: (leadMinutes: number) => getJSON<WindVectorsResponse>(`/wind-vectors?lead_time=${leadMinutes}`),
+  windVectors: (leadMinutes: number, stride = 4) => getJSON<WindVectorsResponse>(`/wind-vectors?lead_time=${leadMinutes}&stride=${stride}`),
   regionForecast: (lat: number, lon: number, leadMinutes: number) =>
     getJSON<RegionForecast>(`/region-forecast?lat=${lat}&lon=${lon}&lead_time=${leadMinutes}`),
   forecast: (model: ModelId) => getJSON<ForecastSummary>(`/forecast?model=${model}`),

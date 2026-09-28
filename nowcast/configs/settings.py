@@ -122,54 +122,6 @@ def get_wide_bbox():
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data")
 IMD_DIR = os.path.join(DATA_DIR, "imd")
 
-# Set True once real IMD API key / MOSDAC creds are configured via .env.
-# False = replay/mock mode (see fallback matrix, section 6 of project.md).
-USE_LIVE_IMD = os.getenv("USE_LIVE_IMD", "false").lower() == "true"
-IMD_API_KEY = os.getenv("IMD_API_KEY", "")
-TOMORROW_API_KEY = os.getenv("TOMORROW_API_KEY", "")
-
-# ECMWF Open Data (temperature/humidity/wind grid) — genuinely free, no API
-# key needed (their older key-based public-datasets service was mostly
-# decommissioned in 2023; see nowcast/ingestion/ecmwf_weather.py). Still
-# opt-in like the other USE_LIVE_* flags: it makes real network calls on
-# every distinct forecast step requested, so it's not on by default.
-USE_LIVE_ECMWF = os.getenv("USE_LIVE_ECMWF", "false").lower() == "true"
-
-# RainViewer radar reflectivity — real, quantitative dBZ, no API key needed.
-# India coverage is IMD's public radar network, republished by RainViewer.
-# Radial (Doppler) velocity has no public equivalent and stays synthetic
-# even with this on — see nowcast/ingestion/rainviewer_radar.py.
-USE_LIVE_RADAR = os.getenv("USE_LIVE_RADAR", "false").lower() == "true"
-
-# Blitzortung.org real lightning strikes — free community VLF network, no
-# API key needed, fills the gap neither the IMD feed nor Tomorrow.io cover
-# (Tomorrow.io's realtime endpoint has no lightning field at all). Independent
-# of USE_LIVE_IMD: applies on top of whichever station-data source is active.
-# See nowcast/ingestion/blitzortung_lightning.py.
-USE_LIVE_LIGHTNING = os.getenv("USE_LIVE_LIGHTNING", "false").lower() == "true"
-
-# Copernicus Data Space Ecosystem (Sentinel-3 SLSTR F1 thermal band) — real
-# satellite brightness temperature, the one hazard input with no other free
-# live source. Needs a free CDSE account + OAuth2 client credentials (client
-# ID/secret from your account's API credentials page, NOT your login
-# password) — see nowcast/ingestion/copernicus_satellite.py for the caveats
-# (polar-orbit revisit gap, F1 is a thermal/fire channel not literally
-# INSAT's TIR1, wv/mwir stay synthetic even when this succeeds).
-USE_LIVE_SATELLITE = os.getenv("USE_LIVE_SATELLITE", "false").lower() == "true"
-COPERNICUS_CLIENT_ID = os.getenv("COPERNICUS_CLIENT_ID", "")
-COPERNICUS_CLIENT_SECRET = os.getenv("COPERNICUS_CLIENT_SECRET", "")
-
-# EUMETSAT Data Store + Data Tailor (MSG SEVIRI IR10.8) — continuous-coverage
-# alternative to Copernicus above: geostationary, updates every 15min, and
-# actually centered on India/Indian Ocean, vs Sentinel-3's ~1-2 passes/day.
-# Also needs a free account + API credentials (consumer key/secret from
-# api.eumetsat.int/api-key, NOT your login password). Tried first when both
-# are configured — see satellite_insat.py — since continuous coverage beats
-# occasional passes. See nowcast/ingestion/eumetsat_satellite.py for the
-# "written but not live-tested" caveats.
-EUMETSAT_CONSUMER_KEY = os.getenv("EUMETSAT_CONSUMER_KEY", "")
-EUMETSAT_CONSUMER_SECRET = os.getenv("EUMETSAT_CONSUMER_SECRET", "")
-
 # Hazard thresholds (section 4c of project.md) — documented here, not buried.
 HAIL_LIGHTNING_CAT_MIN = "cat17"       # IMD hail flag category
 CLOUDBURST_RAIN_RATE_MM_HR = 15.0      # IMD "very heavy rain" threshold
