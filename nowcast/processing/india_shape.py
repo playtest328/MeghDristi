@@ -50,14 +50,23 @@ def clip_alpha_to_india(rgba, bbox):
     corresponding grid cell's (lon, lat) falls outside India's real
     outline. `bbox` is (lon_min, lat_min, lon_max, lat_max), matching the
     grid `rgba` was rendered over (row 0 = south edge, per
-    _array_to_png_data_url's np.flipud). Mutates and returns `rgba`."""
+    _array_to_png_data_url's np.flipud). Mutates and returns `rgba`.
+
+    Samples each pixel's CENTER, not `linspace(lat_min, lat_max, h)`'s
+    endpoint-inclusive points. MapLibre's image source treats `bbox` as
+    the image's outer edges (row 0's top edge = lat_max, row h-1's bottom
+    edge = lat_min), so pixel i's true center sits half a pixel in from
+    those edges — using linspace's edge-inclusive samples instead offset
+    the whole mask by ~half a pixel (visibly, since the mask has a sharp
+    edge at India's coastline to reveal it, unlike the plain color data
+    this same convention mismatch has always applied to unnoticed)."""
     from shapely.vectorized import contains
 
     india = _load_india_polygon()
     lon_min, lat_min, lon_max, lat_max = bbox
     h, w = rgba.shape[:2]
-    lons = np.linspace(lon_min, lon_max, w)
-    lats = np.linspace(lat_min, lat_max, h)
+    lons = lon_min + (np.arange(w) + 0.5) / w * (lon_max - lon_min)
+    lats = lat_min + (np.arange(h) + 0.5) / h * (lat_max - lat_min)
     lon_grid, lat_grid = np.meshgrid(lons, lats)
 
     inside = contains(india, lon_grid, lat_grid)
