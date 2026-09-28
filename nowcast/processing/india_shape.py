@@ -75,17 +75,37 @@ _OUTLINE_GEOJSON = os.path.join(
 # module docstring's history of that separate bug).
 _NORTH_SHRINK = 0.03  # 3%
 
-# Kashmir/Ladakh (roughly 73-80E) reads as needing to extend a little
-# further north than the rest of the border does after _NORTH_SHRINK above
-# — a purely local correction, not a second global shrink: it cancels a
-# fraction of _NORTH_SHRINK, smoothly, only within this longitude band,
-# tapering to zero at the band's edges so it blends into the rest of the
-# border with no visible seam where the two meet. _KASHMIR_BOOST=1.0 would
-# fully cancel the shrink at the band's center (i.e. that point gets the
-# unshrunk true boundary); <1.0 only partially restores it ("a little up").
+# Two local, per-longitude-band corrections on top of the uniform
+# _NORTH_SHRINK above — each a smooth raised-cosine bump (1.0 at the
+# band's center, tapering to 0.0 at/past its edges, so it blends into the
+# uniform shrink everywhere else with no visible seam):
+#
+# - Kashmir/Ladakh needed to extend further NORTH than the uniform shrink
+#   left it at — a NEGATIVE local addition to the shrink (cancelling part
+#   of it). _KASHMIR_BOOST=1.0 would cancel it completely at the band
+#   center (the unshrunk true boundary there); <1.0 only partially.
+# - Gujarat (Kutch/Rann of Kutch, its northernmost extent) needed to pull
+#   IN from the north a bit more than the uniform shrink already did — a
+#   POSITIVE local addition on top of it. Same mechanism, opposite sign.
+#
+# Both are independently tunable; see _local_bump/_mask_for_grid below for
+# how they combine.
 _KASHMIR_LON_CENTER = 76.5
 _KASHMIR_LON_HALF_WIDTH = 3.5
-_KASHMIR_BOOST = 0.6
+_KASHMIR_BOOST = 0.6  # fraction of _NORTH_SHRINK to CANCEL at the band center
+
+_GUJARAT_LON_CENTER = 71.0
+_GUJARAT_LON_HALF_WIDTH = 3.0
+_GUJARAT_EXTRA_SHRINK = 0.02  # ADDED to _NORTH_SHRINK at the band center
+
+
+def _local_bump(lons, center, half_width):
+    """1.0 at `center`, smoothly falling to 0.0 by `center +/- half_width`,
+    0.0 beyond that — a raised-cosine window, shared by every per-region
+    correction below so they all blend into the uniform shrink the same
+    way (no hard edges anywhere)."""
+    lon_dist = np.abs(lons - center)
+    return np.where(lon_dist < half_width, 0.5 * (1 + np.cos(np.pi * lon_dist / half_width)), 0.0)
 
 
 _india_polygon = None  # lazy-cached
@@ -122,16 +142,12 @@ def _mask_for_grid(w, h, bbox):
     lons = np.linspace(lon_min, lon_max, w)
     lats = np.linspace(lat_min, lat_max, h)
 
-    # Per-column shrink: _NORTH_SHRINK everywhere, reduced by up to
-    # _KASHMIR_BOOST's fraction within the Kashmir/Ladakh longitude band
-    # (smooth raised-cosine falloff, zero effect outside the band).
-    lon_dist = np.abs(lons - _KASHMIR_LON_CENTER)
-    kashmir_bump = np.where(
-        lon_dist < _KASHMIR_LON_HALF_WIDTH,
-        0.5 * (1 + np.cos(np.pi * lon_dist / _KASHMIR_LON_HALF_WIDTH)),
-        0.0,
-    )  # (w,), 1.0 at the band center, 0.0 at/past its edges
-    shrink_per_col = _NORTH_SHRINK * (1 - _KASHMIR_BOOST * kashmir_bump)  # (w,)
+    # Per-column shrink: _NORTH_SHRINK everywhere, locally reduced near
+    # Kashmir/Ladakh and locally increased near Gujarat (see the two
+    # _local_bump-based corrections above).
+    kashmir_bump = _local_bump(lons, _KASHMIR_LON_CENTER, _KASHMIR_LON_HALF_WIDTH)
+    gujarat_bump = _local_bump(lons, _GUJARAT_LON_CENTER, _GUJARAT_LON_HALF_WIDTH)
+    shrink_per_col = _NORTH_SHRINK * (1 - _KASHMIR_BOOST * kashmir_bump) + _GUJARAT_EXTRA_SHRINK * gujarat_bump  # (w,)
 
     # Test each row/column against a point EXTRAPOLATED slightly further
     # from lat_min (south) than its true position — see _NORTH_SHRINK
