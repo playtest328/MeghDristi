@@ -103,7 +103,7 @@ export function ForecastPage({ onClose }: { onClose: () => void }) {
           <X size={18} />
         </button>
       </div>
-      <div className="hazards-page-body" style={{ display: "flex", gap: 0 }}>
+      <div className="hazards-page-body model-compare-row">
         <ModelColumn model="pysteps" />
         <ModelColumn model="dgmr" />
       </div>

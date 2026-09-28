@@ -1,4 +1,4 @@
-import { Activity, Download, MapPin } from "lucide-react";
+import { Activity, Download, MapPin, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { HazardsResponse, ModelId, RegionsResponse } from "../types";
 import { INGEST_CYCLE_MINUTES } from "../lib/config";
@@ -89,16 +89,23 @@ export function LeftSidebar({
   model,
   apiOk,
   lastUpdated,
+  mobileOpen,
+  onMobileClose,
 }: {
   hazards: HazardsResponse | null;
   model: ModelId;
   apiOk: boolean;
   lastUpdated: Date | null;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }) {
   const counts = countByType(hazards);
 
   return (
-    <div className="sidebar left">
+    <div className={`sidebar left ${mobileOpen ? "mobile-open" : ""}`}>
+      <button className="sidebar-mobile-close" onClick={onMobileClose} aria-label="Close panel">
+        <X size={18} />
+      </button>
       <RegionPicker />
 
       <div className="panel-section">

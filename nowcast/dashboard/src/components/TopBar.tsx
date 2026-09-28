@@ -1,10 +1,27 @@
-import { MapPin } from "lucide-react";
+import { MapPin, PanelLeft, PanelRight } from "lucide-react";
 import logo from "../assets/logo.png";
 
-export function TopBar({ apiOk, lastUpdated }: { apiOk: boolean; lastUpdated: Date | null }) {
+export function TopBar({
+  apiOk,
+  lastUpdated,
+  onToggleLeftSidebar,
+  onToggleRightSidebar,
+}: {
+  apiOk: boolean;
+  lastUpdated: Date | null;
+  onToggleLeftSidebar?: () => void;
+  onToggleRightSidebar?: () => void;
+}) {
   return (
     <div className="topbar">
       <div className="brand">
+        {/* Hidden on desktop (CSS), only shown under the mobile breakpoint —
+            LeftSidebar/RightSidebar become off-canvas drawers there instead
+            of permanently-docked 320px columns, and this is how you open
+            them since there's no room to show both alongside the map. */}
+        <button className="mobile-only icon-btn" onClick={onToggleLeftSidebar} aria-label="Toggle info panel">
+          <PanelLeft size={16} />
+        </button>
         <div className="brand-mark">
           <img src={logo} alt="MeghDrishti logo" width={26} height={26} style={{ borderRadius: 6, objectFit: "cover" }} />
         </div>
@@ -26,8 +43,11 @@ export function TopBar({ apiOk, lastUpdated }: { apiOk: boolean; lastUpdated: Da
 
       <div className="topbar-right">
         <div className="location-chip">
-          <MapPin size={14} /> Pune, Maharashtra
+          <MapPin size={14} /> <span>Pune, Maharashtra</span>
         </div>
+        <button className="mobile-only icon-btn" onClick={onToggleRightSidebar} aria-label="Toggle storm/forecast panel">
+          <PanelRight size={16} />
+        </button>
       </div>
     </div>
   );

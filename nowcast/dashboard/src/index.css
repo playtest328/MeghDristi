@@ -429,6 +429,7 @@ input[type="range"]::-webkit-slider-thumb {
 }
 .hazards-page-head h1 { margin: 0; font-size: 16px; font-weight: 700; color: #fff; }
 .hazards-page-body { padding: 20px 24px; flex: 1; }
+.model-compare-row { display: flex; gap: 0; }
 
 .hazard-filter-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .hazard-filter-btn {
@@ -497,5 +498,91 @@ input[type="range"]::-webkit-slider-thumb {
 @keyframes hazard-pulse-ring {
   0% { width: 10px; height: 10px; opacity: 0.9; }
   100% { width: 34px; height: 34px; opacity: 0; }
+}
+
+/* ==================================================================
+   Responsive
+   Desktop layout is two permanently-docked 320px sidebars either side
+   of the map, plus a 180px bottom panel — none of that fits a phone.
+   Below ~900px the sidebars become off-canvas slide-in drawers
+   (toggled from TopBar's mobile-only buttons, dismissed via their own
+   close button or by tapping the backdrop); below ~600px, secondary
+   chrome (topbar tagline/live-update text, map legends) is dropped
+   entirely rather than squeezed unreadably small.
+   ================================================================== */
+
+.mobile-only { display: none; }
+.sidebar-mobile-close { display: none; }
+.sidebar-backdrop { display: none; }
+
+@media (max-width: 900px) {
+  .mobile-only { display: flex; }
+
+  .left-nav { width: 52px; padding: 14px 0; gap: 12px; }
+  .nav-item { width: 40px; padding: 6px; }
+  .nav-item span { font-size: 8px; }
+
+  .topbar { padding: 0 10px; gap: 8px; }
+  .brand { gap: 8px; }
+  .brand-text p { display: none; }
+  .topbar-center { display: none; }
+
+  /* Sidebars: docked flex children -> fixed-position off-canvas drawers.
+     `position: fixed` (not absolute) so they sit above everything
+     including the bottom panel, and aren't clipped by any ancestor's
+     overflow:hidden. */
+  .sidebar {
+    position: fixed; top: 52px; bottom: 0; width: min(85vw, 320px);
+    z-index: 50; transition: transform 0.25s ease; box-shadow: 0 0 30px rgba(0,0,0,0.6);
+  }
+  .sidebar.left { left: 0; transform: translateX(-100%); }
+  .sidebar.left.mobile-open { transform: translateX(0); }
+  .sidebar.right { right: 0; transform: translateX(100%); }
+  .sidebar.right.mobile-open { transform: translateX(0); }
+
+  .sidebar-mobile-close {
+    display: flex; align-self: flex-end; margin: 8px 8px 0 0;
+    background: rgba(255,255,255,0.06); border: 1px solid var(--panel-border);
+    color: var(--text-dim); width: 30px; height: 30px; border-radius: 6px;
+    align-items: center; justify-content: center; cursor: pointer; flex: none;
+  }
+
+  .sidebar-backdrop {
+    display: block; position: fixed; inset: 0; top: 52px; background: rgba(0,0,0,0.55); z-index: 45;
+  }
+
+  /* Map controls: toggle row + time scrubber no longer fit side by side —
+     stack them, each full-width. The toggle row already scrolls
+     horizontally on overflow (see .layer-toggles) for however many
+     buttons still don't fit in one screen-width row. */
+  .map-controls-top { flex-direction: column; align-items: stretch; gap: 8px; }
+  .time-scrubber { justify-content: space-between; }
+
+  /* Bottom panel: 4 fixed-width sections in a horizontally-scrollable
+     row instead of 4 equal flex:1 columns — squeezing a rain-rate chart
+     and a data table into a quarter of a phone's width each was
+     unreadable; scrolling sideways to reach each in turn is more honest
+     than shrinking them past usability. */
+  .bottom-panel { height: auto; max-height: 38vh; overflow-x: auto; overflow-y: hidden; }
+  .bottom-panel .panel-section.flex-1 { flex: none; width: 240px; }
+
+  .region-floating { width: calc(100vw - 32px); max-width: 300px; }
+
+  .model-compare-row { flex-direction: column; }
+  .model-compare-row > .panel-section { border-right: none !important; border-bottom: 1px solid var(--panel-border); }
+
+  .hazards-table { display: block; overflow-x: auto; white-space: nowrap; }
+}
+
+@media (max-width: 600px) {
+  /* Reference legends (radar colorbar, hazard severity key) are useful
+     but not essential, and there's no remaining room for them once the
+     toggle row + time scrubber are already stacked — dropped rather
+     than shown at an illegibly small size. */
+  .map-legends { display: none; }
+
+  .location-chip span { display: none; }
+  .hazards-page-head, .drawer-head { padding: 12px 14px; }
+  .hazards-page-body { padding: 14px; }
 }
 

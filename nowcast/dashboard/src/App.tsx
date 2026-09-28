@@ -84,6 +84,12 @@ function Dashboard() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [apiUnreachable, setApiUnreachable] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
+  // Below the ~900px breakpoint, LeftSidebar/RightSidebar become off-canvas
+  // drawers (see index.css) instead of permanently-docked 320px columns —
+  // these track whether each is currently slid open. Irrelevant above the
+  // breakpoint (CSS keeps them visibly docked there regardless of this).
+  const [mobileLeftOpen, setMobileLeftOpen] = useState(false);
+  const [mobileRightOpen, setMobileRightOpen] = useState(false);
 
   const hazards = useHazards(leadMinutes);
   const stormEta = useStormEta();
@@ -257,9 +263,23 @@ function Dashboard() {
       <LeftNavigation active={activePanel} onSelect={setActivePanel} />
 
       <div className="app-content">
-        <TopBar apiOk={apiOk} lastUpdated={lastUpdated} />
+        <TopBar
+          apiOk={apiOk}
+          lastUpdated={lastUpdated}
+          onToggleLeftSidebar={() => setMobileLeftOpen((v) => !v)}
+          onToggleRightSidebar={() => setMobileRightOpen((v) => !v)}
+        />
 
         <div className="main-body">
+          {(mobileLeftOpen || mobileRightOpen) && (
+            <div
+              className="sidebar-backdrop"
+              onClick={() => {
+                setMobileLeftOpen(false);
+                setMobileRightOpen(false);
+              }}
+            />
+          )}
           {activePanel === "hazards" && (
             <HazardsPage
               hazards={hazards.data ?? null}
@@ -274,7 +294,14 @@ function Dashboard() {
           {activePanel === "forecast" && <ForecastPage onClose={() => setActivePanel("none")} />}
           {activePanel === "replay" && <ReplayPage onClose={() => setActivePanel("none")} />}
 
-          <LeftSidebar hazards={hazards.data ?? null} model={model} apiOk={apiOk} lastUpdated={lastUpdated} />
+          <LeftSidebar
+            hazards={hazards.data ?? null}
+            model={model}
+            apiOk={apiOk}
+            lastUpdated={lastUpdated}
+            mobileOpen={mobileLeftOpen}
+            onMobileClose={() => setMobileLeftOpen(false)}
+          />
 
           <div className="map-area">
             <MapCanvas />
@@ -465,7 +492,12 @@ function Dashboard() {
             <Banner message={banner} />
           </div>
 
-          <RightSidebar stormCells={stormEta.data?.cells ?? null} forecast={forecastSummary.data ?? null} />
+          <RightSidebar
+            stormCells={stormEta.data?.cells ?? null}
+            forecast={forecastSummary.data ?? null}
+            mobileOpen={mobileRightOpen}
+            onMobileClose={() => setMobileRightOpen(false)}
+          />
         </div>
 
         <BottomPanel

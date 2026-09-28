@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { windCompass } from "../lib/colors";
 import type { ForecastSummary, Hazard, HazardType, StormCell } from "../types";
 
@@ -47,9 +48,13 @@ function bucketSeverity(forecast: ForecastSummary | null, fromMin: number, toMin
 export function RightSidebar({
   stormCells,
   forecast,
+  mobileOpen,
+  onMobileClose,
 }: {
   stormCells: StormCell[] | null;
   forecast: ForecastSummary | null;
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
 }) {
   const cells = stormCells ?? [];
   const primaryCell = cells.length ? [...cells].sort((a, b) => a.eta_minutes - b.eta_minutes)[0] : null;
@@ -61,7 +66,10 @@ export function RightSidebar({
   ];
 
   return (
-    <div className="sidebar right">
+    <div className={`sidebar right ${mobileOpen ? "mobile-open" : ""}`}>
+      <button className="sidebar-mobile-close" onClick={onMobileClose} aria-label="Close panel">
+        <X size={18} />
+      </button>
       <div className="panel-section">
         <div className="section-title">Active Hazards</div>
 
