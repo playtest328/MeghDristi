@@ -1,27 +1,12 @@
-# India geo assets
+# India state/district boundaries
 
 `india_states.geojson` (35 features) and `india_districts.geojson` (593
 features) back the clickable, glowing State/District map layers
 (`src/map/layers/AdminBoundaries.tsx`).
 
-`india_mask.geojson` is derived from `india_states.geojson`: union all 35
-state polygons into one India outline (`shapely.ops.unary_union`), then
-subtract that from INDIA_BBOX's own rectangle (`settings.INDIA_BBOX` /
-`nowcast/configs/settings.py`) — the result is "everything in that
-rectangle that ISN'T India," used by `SensorRasterLayers.tsx` to paint
-over the satellite/radar rasters' rectangular edges outside India's
-coastline (see that file's docstring). Regenerate it if `india_states.geojson`
-or `INDIA_BBOX` ever change:
-```python
-from shapely.geometry import shape, mapping, box
-from shapely.ops import unary_union
-import json
-data = json.load(open("india_states.geojson", encoding="utf-8"))
-india = unary_union([shape(f["geometry"]).buffer(0) for f in data["features"]])
-mask = box(68.0, 6.5, 97.5, 37.0).difference(india)  # INDIA_BBOX
-json.dump({"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {}, "geometry": mapping(mask)}]},
-          open("india_mask.geojson", "w", encoding="utf-8"), separators=(",", ":"))
-```
+The satellite/radar "all India" rasters are clipped to India's actual
+coastline server-side (`nowcast/processing/india_shape.py`, applied in
+`api/main.py`'s `raw_layers()`), not here — see that module for how.
 
 **Source:** [geohacker/india](https://github.com/geohacker/india)
 (GADM-derived, public domain-equivalent open data), simplified from the
