@@ -3,9 +3,16 @@ import { X } from "lucide-react";
 import { api } from "../api";
 import { useForecastSummary } from "../hooks/useNowcastData";
 import { TrendChart } from "./TrendChart";
-import type { ModelId, NowcastFrame } from "../types";
+import type { NowcastFrame } from "../types";
 
-const MODEL_META: Record<ModelId, { label: string; desc: string; unit: string; max: number; step: number }> = {
+// This page only ever renders pySTEPS vs DGMR side by side (see the two
+// ModelColumn calls below) — "smaat" is a valid ModelId elsewhere (the
+// backend model query param, the lead-time slider's LEAD_MAX) but has no
+// column here, so MODEL_META/ModelColumn are typed to just the two models
+// actually used instead of the full ModelId union.
+type ChartModelId = "pysteps" | "dgmr";
+
+const MODEL_META: Record<ChartModelId, { label: string; desc: string; unit: string; max: number; step: number }> = {
   pysteps: {
     label: "pySTEPS",
     desc: "Optical-flow extrapolation baseline. Calibrated mm/hr, 0-6h horizon.",
@@ -22,7 +29,7 @@ const MODEL_META: Record<ModelId, { label: string; desc: string; unit: string; m
   },
 };
 
-function ModelColumn({ model }: { model: ModelId }) {
+function ModelColumn({ model }: { model: ChartModelId }) {
   const meta = MODEL_META[model];
   const forecast = useForecastSummary(model);
   const [leadMinutes, setLeadMinutes] = useState(0);
