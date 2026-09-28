@@ -6,6 +6,7 @@ pydantic
 pysteps
 numpy
 scipy
+shapely
 matplotlib
 Pillow
 torch

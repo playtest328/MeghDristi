@@ -26,10 +26,17 @@ import { whenStyleReady } from "../styleReady";
  * (not layer filters), so toggling doesn't require re-adding data.
  *
  * All three are rendered as real vector layers, not a rasterized PNG —
- * crisp at any zoom, unlike an earlier attempt at highlighting India by
- * clipping the satellite/radar rasters' alpha channel to its outline,
- * which had visible blur from PNG resampling. That approach was dropped
- * in favor of this one; see git history for that attempt if curious.
+ * crisp at any zoom, which is what this India layer is FOR: giving a
+ * sharp, correctly-shaped visual cue for India's real border. It does
+ * NOT by itself hide the satellite/radar/weather rasters' own rectangular
+ * edges past that border — those are still separately alpha-clipped to
+ * India's outline server-side (nowcast/processing/india_shape.py),
+ * which is necessary too: removing that clip once left the rasters
+ * showing as a plain box again, this outline drawn on top or not,
+ * since a border LINE doesn't hide what's under it. The two are
+ * complementary, not alternatives: crisp vector outline for the visual
+ * edge, server-side raster clip so there's no rectangle for it to be
+ * drawn on top of in the first place.
  */
 
 const GLOW_PALETTE = [

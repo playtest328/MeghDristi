@@ -27,6 +27,15 @@ json.dump({"type": "FeatureCollection", "features": [{"type": "Feature", "proper
           open("india_outline.geojson", "w", encoding="utf-8"), separators=(",", ":"))
 ```
 
+The same file also lives at `nowcast/configs/geo/india_outline.geojson` on the
+backend, used by `nowcast/processing/india_shape.py` to alpha-clip the
+satellite/radar/weather rasters to India's shape server-side. That clip and
+this frontend outline layer are complementary, not redundant: the server-side
+clip is what keeps those rasters from showing as a rectangle past India's
+border at all; this layer draws a crisp visual edge/light shade on top of
+whatever's there. Removing either one is a regression — keep both in sync if
+`india_outline.geojson` is ever regenerated.
+
 **Source (states/districts):** [geohacker/india](https://github.com/geohacker/india)
 (GADM-derived, public domain-equivalent open data), simplified from the
 original ~23MB/~34MB files to ~1MB/~1.6MB via `mapshaper -simplify 6-8%

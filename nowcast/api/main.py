@@ -546,7 +546,7 @@ def storm_eta():
     return {"cells": storm_cells(_cache["records"])}
 
 
-def _array_to_png_data_url(arr, cmap_name, vmin=None, vmax=None):
+def _array_to_png_data_url(arr, cmap_name, vmin=None, vmax=None, clip_to_india_bbox=None):
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.cm as cm
@@ -559,6 +559,16 @@ def _array_to_png_data_url(arr, cmap_name, vmin=None, vmax=None):
     rgba = (cm.get_cmap(cmap_name)(norm(arr)) * 255).astype(np.uint8)
     # flip vertically: array row 0 is the southern edge of the grid, PNG row 0 is the top
     rgba = np.flipud(rgba)
+    if clip_to_india_bbox is not None:
+        # Zero alpha outside India's real outline so these all-India layers
+        # don't show as a plain rectangle over INDIA_BBOX. The frontend's
+        # crisp India vector outline (AdminBoundaries.tsx) only draws a
+        # border/light shade on TOP — it doesn't hide the raster underneath
+        # by itself, so this clip is still needed or the rectangle shows
+        # through past it (confirmed: removing this in 8a9aaab visibly
+        # brought the box back).
+        from nowcast.processing.india_shape import clip_alpha_to_india
+        rgba = clip_alpha_to_india(np.ascontiguousarray(rgba), clip_to_india_bbox)
     img = Image.fromarray(rgba, mode="RGBA")
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -626,7 +636,7 @@ def raw_layers():
             "id": "satellite_tir1",
             "label": "Satellite IR (TIR-1, 10.8um) — all India",
             "bbox": INDIA_BBOX,
-            "image": _array_to_png_data_url(india_tir1, "gray_r", vmin=190, vmax=300),
+            "image": _array_to_png_data_url(india_tir1, "gray_r", vmin=190, vmax=300, clip_to_india_bbox=INDIA_BBOX),
             "source": "synthetic",
         },
     ]
@@ -639,7 +649,7 @@ def raw_layers():
                 "id": "radar_reflectivity",
                 "label": "Radar reflectivity (dBZ) — all India",
                 "bbox": INDIA_BBOX,
-                "image": _array_to_png_data_url(india_reflectivity, "turbo", vmin=0, vmax=65),
+                "image": _array_to_png_data_url(india_reflectivity, "turbo", vmin=0, vmax=65, clip_to_india_bbox=INDIA_BBOX),
                 "source": "synthetic",
             }
         )
@@ -671,7 +681,7 @@ def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF s
             "unit": "°C",
             "bbox": g["bbox"],
             "vmin": 18, "vmax": 34,
-            "image": _array_to_png_data_url(g["temperature_c"], "RdYlBu_r", vmin=18, vmax=34),
+            "image": _array_to_png_data_url(g["temperature_c"], "RdYlBu_r", vmin=18, vmax=34, clip_to_india_bbox=g["bbox"]),
         },
         {
             "id": "humidity",
@@ -679,7 +689,7 @@ def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF s
             "unit": "%",
             "bbox": g["bbox"],
             "vmin": 0, "vmax": 100,
-            "image": _array_to_png_data_url(g["humidity_pct"], "YlGnBu", vmin=0, vmax=100),
+            "image": _array_to_png_data_url(g["humidity_pct"], "YlGnBu", vmin=0, vmax=100, clip_to_india_bbox=g["bbox"]),
         },
         {
             "id": "wind_speed",
@@ -687,7 +697,7 @@ def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF s
             "unit": "m/s",
             "bbox": g["bbox"],
             "vmin": 0, "vmax": 18,
-            "image": _array_to_png_data_url(g["wind_speed_ms"], "plasma", vmin=0, vmax=18),
+            "image": _array_to_png_data_url(g["wind_speed_ms"], "plasma", vmin=0, vmax=18, clip_to_india_bbox=g["bbox"]),
         },
         {
             "id": "pressure",
@@ -695,7 +705,7 @@ def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF s
             "unit": "hPa",
             "bbox": g["bbox"],
             "vmin": 995, "vmax": 1015,
-            "image": _array_to_png_data_url(g["pressure_hpa"], "coolwarm", vmin=995, vmax=1015),
+            "image": _array_to_png_data_url(g["pressure_hpa"], "coolwarm", vmin=995, vmax=1015, clip_to_india_bbox=g["bbox"]),
         },
     ]
 
@@ -718,7 +728,7 @@ def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF s
                 "unit": "mm/hr",
                 "bbox": INDIA_BBOX,
                 "vmin": 0, "vmax": 65,
-                "image": _array_to_png_data_url(rainrate, "turbo", vmin=0, vmax=65),
+                "image": _array_to_png_data_url(rainrate, "turbo", vmin=0, vmax=65, clip_to_india_bbox=INDIA_BBOX),
             }
         )
         
@@ -749,7 +759,7 @@ def weather_layers(lead_time: int = Query(0, description="minutes ahead; ECMWF s
                 "unit": "Idx",
                 "bbox": INDIA_BBOX,
                 "vmin": 0, "vmax": 5,
-                "image": _array_to_png_data_url(risk, "magma", vmin=0, vmax=5),
+                "image": _array_to_png_data_url(risk, "magma", vmin=0, vmax=5, clip_to_india_bbox=INDIA_BBOX),
             }
         )
 
