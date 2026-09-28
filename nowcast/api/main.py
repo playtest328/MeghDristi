@@ -557,8 +557,6 @@ def _array_to_png_data_url(arr, cmap_name, vmin=None, vmax=None, clip_to_india_b
     norm = mcolors.Normalize(vmin=vmin if vmin is not None else float(arr.min()),
                               vmax=vmax if vmax is not None else float(arr.max()))
     rgba = (cm.get_cmap(cmap_name)(norm(arr)) * 255).astype(np.uint8)
-    # flip vertically: array row 0 is the southern edge of the grid, PNG row 0 is the top
-    rgba = np.flipud(rgba)
     if clip_to_india_bbox is not None:
         # Zero alpha outside India's real outline so these all-India layers
         # don't show as a plain rectangle over INDIA_BBOX. The frontend's
@@ -567,8 +565,23 @@ def _array_to_png_data_url(arr, cmap_name, vmin=None, vmax=None, clip_to_india_b
         # by itself, so this clip is still needed or the rectangle shows
         # through past it (confirmed: removing this in 8a9aaab visibly
         # brought the box back).
+        #
+        # Applied HERE, before the flip below, deliberately: `rgba` right
+        # now shares the exact same row-0-is-south grid `arr` (and every
+        # color-data generator's own np.linspace lon/lat grid) uses.
+        # india_shape.py's mask is built on that identical grid, so a mask
+        # value and a color value at the same [i, j] are guaranteed to be
+        # about the same geographic point — no second coordinate formula
+        # to subtly disagree with the first. (Three earlier versions of
+        # that module each derived their own formula for "where pixel i
+        # is" and each was subtly wrong — see its docstring.) Clipping
+        # post-flip would reintroduce exactly that: the flip alone doesn't
+        # change which formula generated the mask, only clipping on this
+        # shared, unflipped grid guarantees agreement.
         from nowcast.processing.india_shape import clip_alpha_to_india
-        rgba = clip_alpha_to_india(np.ascontiguousarray(rgba), clip_to_india_bbox)
+        rgba = clip_alpha_to_india(rgba, clip_to_india_bbox)
+    # flip vertically: array row 0 is the southern edge of the grid, PNG row 0 is the top
+    rgba = np.flipud(rgba)
     img = Image.fromarray(rgba, mode="RGBA")
     buf = io.BytesIO()
     img.save(buf, format="PNG")
