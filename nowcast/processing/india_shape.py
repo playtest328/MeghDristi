@@ -59,6 +59,23 @@ _OUTLINE_GEOJSON = os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "configs", "geo", "india_outline.geojson"
 )
 
+# Small empirical correction: even with the mask sampling the exact same
+# grid the color data uses (see module docstring), the shaded region still
+# reads as a little larger than the crisp vector outline in practice —
+# most visibly at the northern border, while the southern tip (Kanyakumari)
+# already lines up correctly. Whatever residual causes that (texture
+# filtering bleed when MapLibre stretches the raster image across the
+# bbox, coarse-grid edge quantization, or some combination) shrinks
+# uniformly toward the south, i.e. scaling each row's distance from
+# lat_min down by this factor, so the anchor point users confirmed already
+# matches (the south edge) stays fixed and only the northward overreach is
+# pulled in. Empirical, not derived from a specific geometric cause — if
+# the fit still isn't right, adjust this number rather than re-deriving
+# the coordinate math again (that part is now verified correct; see
+# module docstring's history of that separate bug).
+_NORTH_SHRINK = 0.02  # 2%
+
+
 _india_polygon = None  # lazy-cached
 _mask_cache = {}  # (w, h, bbox) -> (h, w) uint8 alpha array, row 0 = SOUTH (pre-flip)
 
@@ -92,7 +109,21 @@ def _mask_for_grid(w, h, bbox):
     lon_min, lat_min, lon_max, lat_max = bbox
     lons = np.linspace(lon_min, lon_max, w)
     lats = np.linspace(lat_min, lat_max, h)
-    lon_grid, lat_grid = np.meshgrid(lons, lats)  # lat_grid[i, j] = lats[i], row 0 = south
+    # Test each row against a point EXTRAPOLATED slightly further from
+    # lat_min (south) than its true position — see _NORTH_SHRINK above.
+    # This makes rows near the true north edge test against a point just
+    # past it (more likely outside any real landmass there), so they flip
+    # to transparent, pulling the visible shaded region's northern extent
+    # inward. Dividing (not multiplying) by (1 - shrink) is what makes
+    # this an expansion of the test point away from the south anchor, not
+    # a contraction toward it — a contraction would test closer to the
+    # interior instead and make the shaded region LARGER, the opposite of
+    # what's wanted here. Only affects which polygon-containment answer
+    # each row gets, not which row a color value is displayed at, so this
+    # can't reintroduce the data/mask index mismatch that was the actual
+    # earlier bug.
+    test_lats = lat_min + (lats - lat_min) / (1 - _NORTH_SHRINK)
+    lon_grid, lat_grid = np.meshgrid(lons, test_lats)  # lat_grid[i, j] = test_lats[i], row 0 = south
 
     inside = contains(india, lon_grid, lat_grid)
     mask = np.where(inside, np.uint8(255), np.uint8(0))
