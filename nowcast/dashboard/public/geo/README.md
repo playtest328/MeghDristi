@@ -5,8 +5,15 @@ features) back the clickable, glowing State/District map layers
 (`src/map/layers/AdminBoundaries.tsx`).
 
 The satellite/radar "all India" rasters are clipped to India's actual
-coastline server-side (`nowcast/processing/india_shape.py`, applied in
-`api/main.py`'s `raw_layers()`), not here — see that module for how.
+coastline server-side (`nowcast/processing/india_shape.py` +
+`nowcast/configs/geo/india_outline.geojson`), using a separate dedicated
+country-level outline, not this file — see that module's docstring for
+why: this dataset's raw Rajasthan polygon has a real border error near
+72°E/28°N (extends into Pakistan), confirmed against the unmodified
+upstream file. Doesn't affect the click-to-select feature here (the
+error is a small border-area sliver, not a visible distortion of the
+state's overall shape), but ruled this dataset out for anything where
+the exact international border matters.
 
 **Source:** [geohacker/india](https://github.com/geohacker/india)
 (GADM-derived, public domain-equivalent open data), simplified from the

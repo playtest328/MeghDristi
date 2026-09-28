@@ -557,16 +557,21 @@ def _array_to_png_data_url(arr, cmap_name, vmin=None, vmax=None, clip_to_india_b
     norm = mcolors.Normalize(vmin=vmin if vmin is not None else float(arr.min()),
                               vmax=vmax if vmax is not None else float(arr.max()))
     rgba = (cm.get_cmap(cmap_name)(norm(arr)) * 255).astype(np.uint8)
+    # flip vertically: array row 0 is the southern edge of the grid, PNG row 0 is the top
+    rgba = np.flipud(rgba)
     if clip_to_india_bbox is not None:
         # Zero alpha outside India's real outline instead of leaving these
         # all-India layers as a plain rectangle over INDIA_BBOX — done here
         # (source data), not as a separate frontend mask layer, since an
         # opaque mask on top of the map would hide the basemap itself
         # (Pakistan/China/Myanmar/etc.) instead of just the raster tint.
+        # Applied post-flip: clip_alpha_to_india rasterizes directly into
+        # this final image orientation (row 0 = north), not a separately
+        # derived lon/lat sample grid — see that module's docstring for
+        # why (two earlier attempts at the latter were visibly misaligned).
         from nowcast.processing.india_shape import clip_alpha_to_india
-        clip_alpha_to_india(rgba, clip_to_india_bbox)
-    # flip vertically: array row 0 is the southern edge of the grid, PNG row 0 is the top
-    img = Image.fromarray(np.flipud(rgba), mode="RGBA")
+        rgba = clip_alpha_to_india(np.ascontiguousarray(rgba), clip_to_india_bbox)
+    img = Image.fromarray(rgba, mode="RGBA")
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
