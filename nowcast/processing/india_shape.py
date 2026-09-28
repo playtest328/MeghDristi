@@ -73,7 +73,19 @@ _OUTLINE_GEOJSON = os.path.join(
 # the fit still isn't right, adjust this number rather than re-deriving
 # the coordinate math again (that part is now verified correct; see
 # module docstring's history of that separate bug).
-_NORTH_SHRINK = 0.02  # 2%
+_NORTH_SHRINK = 0.03  # 3%
+
+# Kashmir/Ladakh (roughly 73-80E) reads as needing to extend a little
+# further north than the rest of the border does after _NORTH_SHRINK above
+# — a purely local correction, not a second global shrink: it cancels a
+# fraction of _NORTH_SHRINK, smoothly, only within this longitude band,
+# tapering to zero at the band's edges so it blends into the rest of the
+# border with no visible seam where the two meet. _KASHMIR_BOOST=1.0 would
+# fully cancel the shrink at the band's center (i.e. that point gets the
+# unshrunk true boundary); <1.0 only partially restores it ("a little up").
+_KASHMIR_LON_CENTER = 76.5
+_KASHMIR_LON_HALF_WIDTH = 3.5
+_KASHMIR_BOOST = 0.6
 
 
 _india_polygon = None  # lazy-cached
@@ -109,23 +121,35 @@ def _mask_for_grid(w, h, bbox):
     lon_min, lat_min, lon_max, lat_max = bbox
     lons = np.linspace(lon_min, lon_max, w)
     lats = np.linspace(lat_min, lat_max, h)
-    # Test each row against a point EXTRAPOLATED slightly further from
-    # lat_min (south) than its true position — see _NORTH_SHRINK above.
-    # This makes rows near the true north edge test against a point just
-    # past it (more likely outside any real landmass there), so they flip
-    # to transparent, pulling the visible shaded region's northern extent
-    # inward. Dividing (not multiplying) by (1 - shrink) is what makes
-    # this an expansion of the test point away from the south anchor, not
-    # a contraction toward it — a contraction would test closer to the
-    # interior instead and make the shaded region LARGER, the opposite of
-    # what's wanted here. Only affects which polygon-containment answer
-    # each row gets, not which row a color value is displayed at, so this
-    # can't reintroduce the data/mask index mismatch that was the actual
-    # earlier bug.
-    test_lats = lat_min + (lats - lat_min) / (1 - _NORTH_SHRINK)
-    lon_grid, lat_grid = np.meshgrid(lons, test_lats)  # lat_grid[i, j] = test_lats[i], row 0 = south
 
-    inside = contains(india, lon_grid, lat_grid)
+    # Per-column shrink: _NORTH_SHRINK everywhere, reduced by up to
+    # _KASHMIR_BOOST's fraction within the Kashmir/Ladakh longitude band
+    # (smooth raised-cosine falloff, zero effect outside the band).
+    lon_dist = np.abs(lons - _KASHMIR_LON_CENTER)
+    kashmir_bump = np.where(
+        lon_dist < _KASHMIR_LON_HALF_WIDTH,
+        0.5 * (1 + np.cos(np.pi * lon_dist / _KASHMIR_LON_HALF_WIDTH)),
+        0.0,
+    )  # (w,), 1.0 at the band center, 0.0 at/past its edges
+    shrink_per_col = _NORTH_SHRINK * (1 - _KASHMIR_BOOST * kashmir_bump)  # (w,)
+
+    # Test each row/column against a point EXTRAPOLATED slightly further
+    # from lat_min (south) than its true position — see _NORTH_SHRINK
+    # above. This makes rows near the true north edge test against a point
+    # just past it (more likely outside any real landmass there), so they
+    # flip to transparent, pulling the visible shaded region's northern
+    # extent inward. Dividing (not multiplying) by (1 - shrink) is what
+    # makes this an expansion of the test point away from the south
+    # anchor, not a contraction toward it — a contraction would test
+    # closer to the interior instead and make the shaded region LARGER,
+    # the opposite of what's wanted here. Only affects which
+    # polygon-containment answer each cell gets, not which row a color
+    # value is displayed at, so this can't reintroduce the data/mask index
+    # mismatch that was the actual earlier bug.
+    lon_grid, lat_col = np.meshgrid(lons, lats)  # both (h, w); lat_col[i, j] = lats[i]
+    test_lat_grid = lat_min + (lat_col - lat_min) / (1 - shrink_per_col[None, :])  # (h, w), row 0 = south
+
+    inside = contains(india, lon_grid, test_lat_grid)
     mask = np.where(inside, np.uint8(255), np.uint8(0))
     _mask_cache[key] = mask
     return mask
