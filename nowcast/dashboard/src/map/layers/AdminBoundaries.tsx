@@ -3,6 +3,7 @@ import type { FeatureCollection } from "geojson";
 import type { Map as MaplibreMap, MapMouseEvent } from "maplibre-gl";
 import { X } from "lucide-react";
 import { useMeghMap } from "../MapProvider";
+import { whenStyleReady } from "../styleReady";
 
 /** Clickable, glowing state + district boundaries.
  *
@@ -40,28 +41,6 @@ const GEO_URL: Record<Level, string> = {
   states: "/geo/india_states.geojson",
   districts: "/geo/india_districts.geojson",
 };
-
-/** MapLibre's style can transiently report `isStyleLoaded() === false` even
- * after the map's own 'load' event has fired — e.g. while other layer
- * components (HazardLayers, SensorRasterLayers, ...) are adding their own
- * sources around the same time. Calling addSource/addLayer during that
- * window can silently no-op or throw ("Style is not done loading."). A
- * one-shot 'styledata' listener isn't reliable here: if nothing else
- * changes the style after the transient false, no further 'styledata'
- * event ever fires and the listener waits forever — so this polls the
- * (cheap, synchronous) isStyleLoaded() check instead of waiting on a
- * specific event. */
-function whenStyleReady(map: MaplibreMap, fn: () => void) {
-  if (map.isStyleLoaded()) {
-    fn();
-    return;
-  }
-  const check = () => {
-    if (map.isStyleLoaded()) fn();
-    else setTimeout(check, 50);
-  };
-  setTimeout(check, 50);
-}
 
 function addBoundaryLayers(map: MaplibreMap, level: Level, data: FeatureCollection) {
   const src = `${level}-src`;
