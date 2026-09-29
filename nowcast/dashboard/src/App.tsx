@@ -62,7 +62,12 @@ function Dashboard() {
   const [radarVisible, setRadarVisible] = useState(true);
   const [heatmapsVisible, setHeatmapsVisible] = useState(true);
   const [lightningVisible, setLightningVisible] = useState(true);
-  const [modelFrameVisible, setModelFrameVisible] = useState(false);
+  // On by default: switching models (pySTEPS/DGMR/SmaAt-UNet) is otherwise
+  // invisible on the map — only the sidebar numbers/chart change — which
+  // reads as "the two models look the same" during a demo. This is the
+  // actual per-model forecast raster (or, for SmaAt-UNet, the honest
+  // "not trained yet" placeholder — see ModelFrameLayer.tsx).
+  const [modelFrameVisible, setModelFrameVisible] = useState(true);
   const [windAnimationVisible, setWindAnimationVisible] = useState(false);
   const [statesVisible, setStatesVisible] = useState(false);
   const [districtsVisible, setDistrictsVisible] = useState(false);
@@ -321,6 +326,7 @@ function Dashboard() {
               statesVisible={statesVisible}
               districtsVisible={districtsVisible}
               indiaVisible={indiaVisible}
+              model={model}
               modelFrame={nowcastFrame.data ?? null}
               modelFrameVisible={modelFrameVisible}
               region={region}
@@ -537,6 +543,7 @@ function MapLayers(props: {
   statesVisible: boolean;
   districtsVisible: boolean;
   indiaVisible: boolean;
+  model: ModelId;
   modelFrame: NowcastFrame | null;
   modelFrameVisible: boolean;
   region: { lat: number; lon: number } | null;
@@ -557,7 +564,7 @@ function MapLayers(props: {
       <WindArrows points={props.windPoints} visible={props.activeVar === "wind_speed"} />
       <WindParticles points={props.windParticlePoints} visible={props.windAnimationVisible} />
       <AdminBoundaries statesVisible={props.statesVisible} districtsVisible={props.districtsVisible} indiaVisible={props.indiaVisible} />
-      <ModelFrameLayer frame={props.modelFrame} visible={props.modelFrameVisible} />
+      <ModelFrameLayer frame={props.modelFrame} visible={props.modelFrameVisible} model={props.model} />
       <RegionBox region={props.region} />
       <AreaBox drawing={props.drawingArea} selected={props.area} fillColor={props.areaFillColor} fillOpacity={props.areaFillOpacity} />
       <ReferenceLabels />

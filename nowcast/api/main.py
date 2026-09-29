@@ -29,6 +29,7 @@ from nowcast.configs.settings import (
     ALERT_COOLDOWN_MINUTES,
     WIDE_GRID_SIZE,
     get_active_region_key,
+    get_region_bbox,
     get_region_name,
     set_active_region,
     override_active_region,
@@ -598,7 +599,11 @@ def nowcast_frame(
     colormap) or DGMR relative intensity (unitless 0-1, plasma colormap,
     distinct palette so it's visually obvious this is not the same unit)."""
     if model == "smaat":
-        return {"available": False, "reason": "SmaAt-UNet is currently fine-tuning on SEVIR dataset. Weights not yet loaded."}
+        # bbox included even though there's no real frame, so the frontend
+        # can still draw an honest "training in progress" placeholder box
+        # over the active region instead of showing literally nothing —
+        # see ModelFrameLayer.tsx.
+        return {"available": False, "reason": "SmaAt-UNet is currently fine-tuning on SEVIR dataset. Weights not yet loaded.", "bbox": get_region_bbox()}
     if model == "dgmr":
         fc = _refresh_dgmr()
         if fc is None:
